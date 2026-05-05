@@ -1,5 +1,5 @@
 
-noticeTypes = {
+notice_types = {
     "ContractNotice" : "Ogłoszenie o zamówieniu",
     "AgreementIntentionNotice" : "Ogłoszenie o zamiarze zawarcia umowy",
     "TenderResultNotice" : "Ogłoszenie o wyniku postępowania",
@@ -17,3 +17,30 @@ noticeTypes = {
     "ConcessionUpdateAgreementNotice" : "Ogłoszenie o zmianie umowy koncesji"
 }
 
+response_attributes = {
+    "objectId": "Identyfikator ogłoszenia",
+    "clientType": "Rodzaj zamawiającego",
+    "TenderType": "Tryb zamówienia",
+    "noticeType": "Rodzaj ogłoszenia",
+    "noticeNumber": "Numer ogłoszenia",
+    "bzpNumber": "Numer BZP",
+    "isTenderAmountBelowEU": "Czy procedura nieunijna",
+    "publicationDate": "Data publikacji",
+    "orderObject": "Nazwa zamówienia / nazwa konkursu",
+    "cpvCode": "Kod CPV",
+    "submittingOffersDate": "Termin składania ofert",
+    "procedureResult": "Wynik postępowania",
+    "organizationName": "Nazwa zamawiającego",
+    "organizationCity": "Miejscowość zamawiającego",
+    "organizationProvince": "Województwo zamawiającego",
+    "organizationCountry": "Kraj zamawiającego",
+    "organizationNationalId": "Krajowy numer identyfikacyjny",
+    "organizationId": "Id organizacji",
+    "tenderId": "Identyfikator postępowania",
+    "htmlBody": "Zawartość ogłoszenia w postaci HTML",
+    "contractorName": "Nazwa wykonawcy",
+    "contractorCity": "Miejscowość wykonawcy",
+    "contractorProvince": "Województwo wykonawcy",
+    "contractorCountry": "Kraj wykonawcy",
+    "contractorNationalId": "Krajowy numer identyfikacyjny"
+}
