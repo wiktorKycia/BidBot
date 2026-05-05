@@ -1,0 +1,1 @@
+{"dictionaryId":"ENUM.017","validFrom":"2020-01-11T11:10:13Z","validTo":null,"version":"Wersja 1.0.3","language":"PL","items":[{"identifier":"konkurs","Items":[{"identifier":"konkurs_nieograniczony","key":"nieograniczony"},{"identifier":"konkurs_ograniczony","key":"ograniczony"}],"key":"Konkurs"}],"nested":false}

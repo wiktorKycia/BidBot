@@ -1,0 +1,12 @@
+{
+  "dictionaryId":"ENUM.002",
+  "validFrom":"2020-01-11T11:10:13+02:00",
+  "validTo":null,
+  "version":"Wersja 1.0.1",
+  "language":"PL",
+  "items":[
+	  {"key":"Dostawy","identifier":"Delivery"},
+	  {"key":"Usługi","identifier":"Services"},
+	  {"key":"Roboty budowlane","identifier":"Works"}	  
+  ]
+}
