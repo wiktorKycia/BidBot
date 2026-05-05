@@ -26,7 +26,7 @@ def scrape(output_folder_path: str):
                 print(data['error'])
                 break
 
-            if not data: break
+            if len(data) == 0: break
 
             for i, obj in enumerate(data):
                 if not os.path.exists(os.path.join(output_folder_path, "raw")):
