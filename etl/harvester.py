@@ -1,7 +1,8 @@
 import os
 
-from scrapers.ezamowienia.scraper import scrape
+from etl.scrapers.ezamowienia.scraper import scrape
 
-if not os.path.exists("data"):
-    os.mkdir("data")
-scrape("data")
+if __name__ == '__main__':
+    if not os.path.exists("data"):
+        os.mkdir("data")
+    scrape("data")
