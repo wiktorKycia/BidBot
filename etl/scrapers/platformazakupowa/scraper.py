@@ -65,8 +65,8 @@ async def fetch_page(session: aiohttp.ClientSession, page_number: int) -> str:
         "limit": 100
     }
     async with session.get(ALL_RESOURCES_URL, params=params, headers={
-        "User-Agent": "Mozilla / 5.0 (X11; Linux x86_64; rv:150.0) Gecko / 20100101 Firefox / 150.0",
-        "Cookie": "_ga=GA1.1.1329369382.1777824441; doNotShowAgain_1280111=true; PHPSESSID=bijcd4nr2d11ntrbdulh2l8cbk; _ga_G4SDRB9JBF=GS2.1.s1778065831$o12$g1$t1778066447$j43$l0$h0"
+        "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36",
+        "Cookie": "_ga=GA1.1.1329369382.1777824441; doNotShowAgain_1280111=true; PHPSESSID=bijcd4nr2d11ntrbdulh2l8cbk; _ga_G4SDRB9JBF=GS2.1.s1778065831$o12$g1$t1778067514$j58$l0$h0",
     }) as response:
         if response.status != 200:
             print(f"Błąd HTTP {response.status} dla strony {page_number}")
@@ -118,7 +118,7 @@ async def process_page(session: aiohttp.ClientSession, page_number: int):
             continue
 
         raw_filepath = RAW_DIR / f"{notice_id}.html"
-        await save_html(raw_filepath, data)
+        await save_html(raw_filepath, parsed_data['raw_html'])
 
         parsed_filepath = PARSED_DIR / f"{notice_id}.json"
         await save_json(parsed_filepath, parsed_data)
@@ -154,6 +154,7 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
         return {
             "client_name": None,
             "description": None,
+            "raw_html": None,
             "attachments": None
         }
 
@@ -184,6 +185,7 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
     return {
         "client_name": organisation, # tu zwykle wywala \n, nie wiem czemu
         "description": description,
+        "raw_html": notice_doc.prettify(),
         "attachments": attachment_url_list
     }
 
