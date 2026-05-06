@@ -1,47 +1,50 @@
 import asyncio
 import json
-import shutil
+import hashlib
 from pathlib import Path
+from datetime import datetime, timezone, timedelta
 
 import aiofiles
 import aiohttp
 from aiohttp import TCPConnector
 from aiohttp.resolver import AsyncResolver
 from bs4 import BeautifulSoup
-from datetime import datetime, timezone
 
-BASE_URL = "https://platformazakupowa.pl"
-ALL_RESOURCES_URL = "https://platformazakupowa.pl/all"
+BASE_URL = "https://platformaofertowa.pl"
+API_LIST_URL = "https://api.platformaofertowa.pl/tenders/search/best-match"
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
-RAW_DIR = DATA_DIR / "raw_html"
+RAW_DIR = DATA_DIR / "raw"
 PARSED_DIR = DATA_DIR / "parsed"
+ATTACHMENTS_DIR = DATA_DIR / "attachments"
+LAST_RUN_FILE = DATA_DIR / "last_run.txt"
 
-SEMAPHORE = asyncio.Semaphore(100)
+SEMAPHORE = asyncio.Semaphore(30)
 
 
 def setup_directories():
-    for directory in [RAW_DIR, PARSED_DIR]:
-        if directory.exists():
-            shutil.rmtree(directory)
+    for directory in [RAW_DIR, PARSED_DIR, ATTACHMENTS_DIR]:
         directory.mkdir(parents=True, exist_ok=True)
 
 
-def is_downloaded(notice_id: str) -> bool:
-    return (RAW_DIR / f"{notice_id}.html").exists()
+def get_last_run_date() -> datetime:
+    if LAST_RUN_FILE.exists():
+        try:
+            date_str = LAST_RUN_FILE.read_text().strip()
+            return datetime.fromisoformat(date_str)
+        except ValueError:
+            pass
+    return datetime(2000, 1, 1, tzinfo=timezone.utc)
 
 
-def is_tender_open(deadline_str: str) -> bool:
-    if not deadline_str:
-        return False
-    try:
-        deadline = datetime.fromisoformat(deadline_str.replace('Z', '+00:00'))
-        now = datetime.now(timezone.utc)
-        return deadline > now
-    except ValueError as e:
-        print(f"Błąd parsowania daty {deadline_str}: {e}")
-        return False
+def set_last_run_date(dt: datetime):
+    LAST_RUN_FILE.write_text(dt.isoformat())
+
+
+async def save_text(filepath: Path, data: str):
+    async with aiofiles.open(filepath, mode="w", encoding="utf-8") as f:
+        await f.write(data)
 
 
 async def save_json(filepath: Path, data: dict):
@@ -49,185 +52,247 @@ async def save_json(filepath: Path, data: dict):
         await f.write(json.dumps(data, ensure_ascii=False, indent=2))
 
 
-async def save_html(filepath: Path, data: str):
-    async with aiofiles.open(filepath, mode="w", encoding="utf-8") as f:
-        await f.write(data)
+async def download_file(session: aiohttp.ClientSession, url: str, save_dir: Path) -> dict:
+    if not url.startswith("http"):
+        url = f"{BASE_URL}{url}" if url.startswith("/") else f"{BASE_URL}/{url}"
 
+    filename = url.split('/')[-1].split('?')[0]
+    if not filename or filename.endswith("/"):
+        filename = f"zalacznik_{hashlib.md5(url.encode()).hexdigest()[:6]}.pdf"
 
-async def fetch_page(session: aiohttp.ClientSession, page_number: int) -> str:
-    params = {"page": page_number, "limit": 100}
-    async with SEMAPHORE:
-        async with session.get(ALL_RESOURCES_URL, params=params, headers={
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        }) as response:
-            if response.status != 200:
-                print(f"Błąd HTTP {response.status} dla strony {page_number}")
-                return ""
-            try:
-                return await response.text()
-            except Exception as e:
-                print(f"Błąd parsowania tekstu strony {page_number}: {e}")
-                return ""
-
-
-async def fetch_notice_details(session: aiohttp.ClientSession, notice_url: str):
-    try:
-        async with SEMAPHORE:
-            async with session.get(notice_url, headers={"Accept-Language": "pl,pl-PL;q=0.9"}) as response:
-                if response.status != 200:
-                    print(f"Błąd HTTP {response.status} dla ogłoszenia {notice_url.split('/')[-1]}")
-                    return ""
-                try:
-                    return await response.text()
-                except Exception as e:
-                    print(f"Błąd parsowania tekstu ogłoszenia {notice_url.split('/')[-1]}: {e}")
-                    return ""
-    except asyncio.TimeoutError:
-        print("Czas oczekiwania na żądanie minął")
-        return ""
-
-
-async def process_notice_details(session: aiohttp.ClientSession, notice_url: str) -> dict:
-    data = await fetch_notice_details(session, notice_url)
-    if not data:
-        return {
-            "client_name": None,
-            "description": None,
-            "raw_html": None,
-            "attachments": []
-        }
-
-    notice_doc = BeautifulSoup(data, "lxml")
-    organisation: str = "Nie podano nazwy"
-
-    li_list = notice_doc.find_all("li", class_="proceeding-info-list-item")
-    for li in li_list:
-        div = li.find("div")
-        if div and "Organizacja" in div.text:
-            texts = list(li.stripped_strings)
-            if len(texts) > 1:
-                organisation = " ".join(texts[1:])
-            break
-
-    requirements = notice_doc.find("div", {"id": "requirements"})
-    description: str = requirements.text.strip() if requirements and requirements.text.strip() else "bez opisu"
-
-    attachment_url_list: list[str] = []
-    attachments_table = notice_doc.find("table", {"id": "allAttachmentsTable"})
-    if attachments_table:
-        table_rows = attachments_table.tbody.find_all("tr")
-        for row in table_rows:
-            a_tag = row.find("a", class_="proceeding-file-download")
-            if a_tag and 'href' in a_tag.attrs:
-                href = a_tag['href']
-                if href.startswith(".."):
-                    href = href[2:]
-                attachment_url_list.append(f"{BASE_URL}{href}" if not href.startswith("http") else href)
-
-    return {
-        "client_name": organisation,
-        "description": description,
-        "raw_html": notice_doc.prettify(),
-        "attachments": attachment_url_list
+    filepath = save_dir / filename
+    metadata = {
+        "url": url,
+        "filename": filename,
+        "size_bytes": 0,
+        "downloaded": False
     }
 
+    if filepath.exists():
+        metadata["size_bytes"] = filepath.stat().st_size
+        metadata["downloaded"] = True
+        return metadata
 
-async def process_page(session: aiohttp.ClientSession, page_number: int):
-    print(f"Rozpoczęto pobieranie strony {page_number}")
-    total_notices_downloaded: int = 0
-    data = await fetch_page(session, page_number)
+    async with SEMAPHORE:
+        try:
+            async with session.get(url) as response:
+                if response.status == 200:
+                    size = 0
+                    async with aiofiles.open(filepath, mode='wb') as f:
+                        async for chunk in response.content.iter_chunked(1024 * 1024):
+                            await f.write(chunk)
+                            size += len(chunk)
 
-    if not data:
-        return
+                    metadata["size_bytes"] = size
+                    metadata["downloaded"] = True
+                    print(f"    Pobrano plik: {filename}")
+        except Exception as e:
+            print(f"    Błąd pobierania {url}: {e}")
 
-    doc = BeautifulSoup(data, "lxml")
-    notices = doc.find_all("div", class_="product-info")
-
-    async def process_single_notice(notice):
-        nonlocal total_notices_downloaded
-        a_tag = notice.find("a")
-        if not a_tag or 'href' not in a_tag.attrs:
-            return
-
-        notice_id = a_tag['href'].split('/')[-1]
-        notice_name = a_tag.text.strip()
-        notice_url = f"{BASE_URL}{a_tag['href']}"
-
-        span = notice.find("span", class_="auction-time")
-        if not span or not span.find('b') or 'title' not in span.b.attrs:
-            return
-
-        submitting_offers_date_str = " ".join(span.b['title'].split()[:2]).strip()
-        submitting_offers_date = datetime.strptime(submitting_offers_date_str, '%d-%m-%Y %H:%M:%S').strftime('%Y-%m-%dT%H:%M:%SZ')
-
-        if not is_tender_open(submitting_offers_date):
-            return
-        if not notice_id or is_downloaded(notice_id):
-            return
-
-        details = await process_notice_details(session, notice_url)
-
-        parsed_data = {
-            "id": notice_id,
-            "source": "platformazakupowa.pl",
-            "url": notice_url,
-            "title": notice_name,
-            "publication_date": None,
-            "submitting_offers_date": submitting_offers_date,
-            "notice_number": "Unknown",
-            **details
-        }
-
-        if parsed_data.get('raw_html'):
-            raw_filepath = RAW_DIR / f"{notice_id}.html"
-            await save_html(raw_filepath, parsed_data['raw_html'])
-
-            parsed_filepath = PARSED_DIR / f"{notice_id}.json"
-            del parsed_data['raw_html']
-            await save_json(parsed_filepath, parsed_data)
-
-            total_notices_downloaded += 1
-
-    tasks = [process_single_notice(notice) for notice in notices]
-    await asyncio.gather(*tasks)
-
-    print(f"Zakończono stronę {page_number}. Zapisano otwartych przetargów: {total_notices_downloaded}")
+    return metadata
 
 
-async def get_pages_number(session: aiohttp.ClientSession):
-    data = await fetch_page(session, 1)
-    if not data:
-        raise Exception("Strona platformazakupowa.pl jest niedostępna!")
+async def check_page_exists(session: aiohttp.ClientSession, page: int) -> bool:
+    limit = 50
+    offset = (page - 1) * limit
+    deadline_from = (datetime.now(timezone.utc) - timedelta(days=1)).strftime('%Y-%m-%dT%H:%M:%S.000Z')
 
-    doc = BeautifulSoup(data, "lxml")
-    ul = doc.find("ul", class_="pagination")
-    if not ul:
-        return 1
+    payload = {
+        "query": "",
+        "filters": {
+            "cpv_codes": None,
+            "locality": {"locality": None},
+            "submitting_offers_deadline_from": deadline_from
+        },
+        "limit": 1,
+        "offset": offset,
+        "active_status": 1,
+        "search_config": {"reranking_limit": 1000},
+        "sort_by": "submitting_offers_deadline_asc"
+    }
 
-    li_list = ul.find_all("li")
+    headers = {
+        "Host": "api.platformaofertowa.pl",
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "Origin": "https://platformaofertowa.pl",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+    }
+
     try:
-        total_pages = int(li_list[-2].a.text)
-        return total_pages
-    except (IndexError, ValueError, AttributeError):
-        return 1
+        async with session.post(API_LIST_URL, json=payload, headers=headers) as response:
+            if response.status == 200:
+                api_data = await response.json()
+                return len(api_data.get("tenders", [])) > 0
+    except Exception:
+        pass
+    return False
+
+
+async def get_total_pages(session: aiohttp.ClientSession) -> int:
+    print("Rozpoczynam wyszukiwanie binarne w celu znalezienia ostatniej strony...")
+
+    low = 1
+    high = 5
+
+    while await check_page_exists(session, high):
+        low = high
+        high *= 2
+        print(f"   Strona {low} istnieje. Przesuwam górną granicę szukania na {high}...")
+
+    last_valid = low
+    while low <= high:
+        mid = (low + high) // 2
+        print(f"   Sprawdzam stronę {mid}...")
+
+        if await check_page_exists(session, mid):
+            last_valid = mid
+            low = mid + 1
+        else:
+            high = mid - 1
+
+    print(f"Ustalono dokładną liczbę stron do pobrania: {last_valid}")
+    return last_valid
+
+
+async def process_single_notice(session: aiohttp.ClientSession, item: dict) -> dict:
+    notice_id = str(item.get("id"))
+
+    raw_html_desc = item.get("description")
+    if raw_html_desc is None:
+        raw_html_desc = ""
+
+    doc = BeautifulSoup(raw_html_desc, "lxml")
+    clean_description = doc.get_text(separator="\n", strip=True)
+
+    await save_text(RAW_DIR / f"{notice_id}.html", raw_html_desc)
+
+    attachment_links = set()
+    for a_tag in doc.find_all("a", href=True):
+        href = str(a_tag['href'])
+        href_lower = href.lower()
+        if any(ext in href_lower for ext in [".pdf", ".zip", ".doc", ".docx", "download", "file"]):
+            attachment_links.add(href)
+
+    tender_attachments_dir = ATTACHMENTS_DIR / notice_id
+    if attachment_links:
+        tender_attachments_dir.mkdir(parents=True, exist_ok=True)
+
+    download_tasks = [download_file(session, link, tender_attachments_dir) for link in attachment_links]
+    attachments_metadata = await asyncio.gather(*download_tasks) if download_tasks else []
+
+    parsed_data = {
+        **item,
+        "scraper_url": f"{BASE_URL}/pl/tenders/tenders-list/{notice_id}",
+        "scraper_clean_description": clean_description,
+        "scraper_attachments": attachments_metadata
+    }
+
+    return parsed_data
+
+
+async def process_list_page(session: aiohttp.ClientSession, page: int, last_run_date: datetime) -> int:
+    print(f"\nSprawdzam stronę {page} przez API...")
+
+    limit = 50
+    offset = (page - 1) * limit
+    deadline_from = (datetime.now(timezone.utc) - timedelta(days=1)).strftime('%Y-%m-%dT%H:%M:%S.000Z')
+
+    payload = {
+        "query": "",
+        "filters": {
+            "cpv_codes": None,
+            "locality": {"locality": None},
+            "submitting_offers_deadline_from": deadline_from
+        },
+        "limit": limit,
+        "offset": offset,
+        "active_status": 1,
+        "search_config": {"reranking_limit": 1000},
+        "sort_by": "submitting_offers_deadline_asc"
+    }
+
+    headers = {
+        "Host": "api.platformaofertowa.pl",
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "Origin": "https://platformaofertowa.pl",
+        "Referer": "https://platformaofertowa.pl/",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+
+    async with SEMAPHORE:
+        try:
+            async with session.post(API_LIST_URL, json=payload, headers=headers) as response:
+                if response.status != 200:
+                    print(f"Błąd HTTP {response.status} podczas pobierania API strony {page}")
+                    return 0
+                api_data = await response.json()
+        except Exception as e:
+            print(f"Błąd połączenia z API: {e}")
+            return 0
+
+    tenders = api_data.get("tenders", [])
+
+    if not tenders:
+        print("Koniec wyników (puste API).")
+        return 0
+
+    tasks = []
+
+    for item in tenders:
+        raw_pub_date = item.get("publicationDate")
+
+        if raw_pub_date:
+            try:
+                pub_date = datetime.fromisoformat(str(raw_pub_date).replace('Z', '+00:00'))
+                if pub_date <= last_run_date:
+                    print(f"Trafiono na stare ogłoszenie ({pub_date.strftime('%Y-%m-%d %H:%M')}). Pomijam resztę zapytania z tej strony.")
+                    break
+            except (ValueError, TypeError):
+                pass
+
+        tasks.append(process_single_notice(session, item))
+
+    results = await asyncio.gather(*tasks) if tasks else []
+
+    saved_count = 0
+    for res in results:
+        if res:
+            await save_json(PARSED_DIR / f"{res['id']}.json", res)
+            saved_count += 1
+
+    return saved_count
 
 
 async def main():
-    print("Inicjalizacja scrapera HTML platformazakupowa.pl...")
+    print("Inicjalizacja scrapera API Platforma Ofertowa...")
     setup_directories()
+
+    last_run_date = get_last_run_date()
+    current_run_date = datetime.now(timezone.utc)
+    print(f"Ostatnie uruchomienie: {last_run_date.strftime('%Y-%m-%d %H:%M:%S')}")
 
     resolver = AsyncResolver(nameservers=["1.1.1.1", "8.8.8.8"])
     connector = TCPConnector(resolver=resolver)
-    timeout = aiohttp.ClientTimeout(total=90)
+    timeout = aiohttp.ClientTimeout(total=45)
 
-    async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
-        total_pages: int = await get_pages_number(session)
-        print(f"Znaleziono stron wyników do przetworzenia: {total_pages}")
+    total_downloaded = 0
 
-        tasks = [process_page(session, page_number) for page_number in range(1, total_pages+1)]
-        await asyncio.gather(*tasks)
+    try:
+        async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
+            total_pages = await get_total_pages(session)
 
-    print("Zakończono pobieranie z platformazakupowa.pl.")
+            print(f"Uruchamiam równoległe pobieranie {total_pages} stron...")
+            tasks = [process_list_page(session, page, last_run_date) for page in range(1, total_pages + 1)]
+
+            results = await asyncio.gather(*tasks)
+            total_downloaded = sum(results)
+
+    finally:
+        set_last_run_date(current_run_date)
+        print(f"\nZakończono pracę programu. Łącznie pobrano {total_downloaded} nowych przetargów.")
+
 
 if __name__ == "__main__":
     asyncio.run(main())
