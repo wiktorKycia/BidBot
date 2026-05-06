@@ -90,20 +90,31 @@ async def process_page(session: aiohttp.ClientSession, page_number: int):
 
     notices = doc.find_all("div", "product-info")
 
+    notice_urls = []
+
     for notice in notices:
+        notice_urls.append(f"{BASE_URL}{notice.a['href']}")
+
+    resolver = AsyncResolver(nameservers=["1.1.1.1", "8.8.8.8"])
+    connector = TCPConnector(resolver=resolver)
+    async with aiohttp.ClientSession(connector=connector) as session:
+        tasks = [process_notice_details(session, notice_url) for notice_url in notice_urls]
+        details_list = await asyncio.gather(*tasks)
+
+
+    for i, notice in enumerate(notices):
         notice_id = notice.a['href'].split('/')[-1] # ten numerek po słowie: /transakcja/
         notice_name = notice.a.text.strip()
-        notice_url = f"{BASE_URL}{notice.a['href']}"
         span = notice.find("span", "auction-time")
         submitting_offers_date_str = " ".join(span.b['title'].split()[:2]).strip()
         submitting_offers_date = datetime.strptime(submitting_offers_date_str, '%d-%m-%Y %H:%M:%S').strftime('%Y-%m-%dT%H:%M:%SZ')
 
-        details = await process_notice_details(session, notice_url)
+        details = details_list[i]
 
         parsed_data = {
             "id": notice_id,
             "source": "platformazakupowa.pl",
-            "url": notice_url,
+            "url": notice_urls[i],
             "title": notice_name,
             "publication_date": "Zara bedzie",
             "submitting_offers_date": submitting_offers_date,
@@ -130,22 +141,33 @@ async def process_page(session: aiohttp.ClientSession, page_number: int):
 
 async def fetch_notice_details(session: aiohttp.ClientSession, notice_url: str):
     """Pobiera pojedyńcze ogłoszenie"""
-    async with session.get(notice_url, headers={
-        "Accept-Language": "pl,pl-PL;q=0.9"
-    }) as response:
-        if response.status != 200:
-            print(f"Błąd HTTP {response.status} dla ogłoszenia {notice_url.split('/')[-1]}")
-            return ""
+    try:
+        async with session.get(notice_url, headers={
+            "Accept-Language": "pl,pl-PL;q=0.9"
+        }) as response:
+            if response.status != 200:
+                print(f"Błąd HTTP {response.status} dla ogłoszenia {notice_url.split('/')[-1]}")
+                return ""
 
-        try:
-            return await response.text()
-        except Exception as e:
-            print(f"Błąd parsowania tekstu ogłoszenia {notice_url.split('/')[-1]}: {e}")
-            return ""
+            try:
+                return await response.text()
+            except Exception as e:
+                print(f"Błąd parsowania tekstu ogłoszenia {notice_url.split('/')[-1]}: {e}")
+                return ""
+    except aiohttp.client_exceptions.ConnectionTimeoutError as e:
+        print(f"Czas oczekiwania na żądanie minął")
+        return ""
 
 
 async def process_notice_details(session: aiohttp.ClientSession, notice_url: str) -> dict:
     data = await fetch_notice_details(session, notice_url)
+    if not data:
+        return {
+            "client_name": None,
+            "description": None,
+            "attachments": None
+        }
+
     notice_doc = BeautifulSoup(data, "html.parser")
 
     li_list = notice_doc.find_all("li", "proceeding-info-list-item")
@@ -179,9 +201,10 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
 async def get_pages_number(session: aiohttp.ClientSession):
     """Pobiera informację o ilości stron paginacji, na jakich są ogłoszenia"""
     data = await fetch_page(session, 1)
+    if not data:
+        raise Exception("Strona platformazakupowa.pl jest niedostępna!")
 
     doc = BeautifulSoup(data, "html.parser")
-    print(doc)
     ul = doc.find("ul", "pagination")
     li_list = ul.find_all("li")
     total_pages:int = int(li_list[-2].a.text)
