@@ -61,7 +61,10 @@ async def fetch_page(session: aiohttp.ClientSession, page_number: int) -> str:
         "page": page_number,
         "limit": 100
     }
-    async with session.get(ALL_RESOURCES_URL, params=params) as response:
+    async with session.get(ALL_RESOURCES_URL, params=params, headers={
+        "User-Agent": "Mozilla / 5.0 (X11; Linux x86_64; rv:150.0) Gecko / 20100101 Firefox / 150.0",
+        "Cookie": "_ga=GA1.1.1329369382.1777824441; doNotShowAgain_1280111=true; PHPSESSID=bijcd4nr2d11ntrbdulh2l8cbk; _ga_G4SDRB9JBF=GS2.1.s1778065831$o12$g1$t1778066447$j43$l0$h0"
+    }) as response:
         if response.status != 200:
             print(f"Błąd HTTP {response.status} dla strony {page_number}")
             return ""
@@ -118,6 +121,7 @@ async def process_page(session: aiohttp.ClientSession, page_number: int):
         await save_json(parsed_filepath, parsed_data)
 
         total_notices_downloaded += 1
+        print(f"Pobrano {total_notices_downloaded} z {len(notices)} ogłoszeń")
 
     print(f"Zakończono pobieranie strony {page_number}, Pobranych i zapisanych otwartych przetargów: {total_notices_downloaded}")
 
@@ -174,6 +178,7 @@ async def get_pages_number(session: aiohttp.ClientSession):
     data = await fetch_page(session, 1)
 
     doc = BeautifulSoup(data, "html.parser")
+    print(doc)
     ul = doc.find("ul", "pagination")
     li_list = ul.find_all("li")
     total_pages:int = int(li_list[-2].a.text)
