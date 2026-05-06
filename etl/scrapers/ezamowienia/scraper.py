@@ -100,7 +100,7 @@ async def save_json(filepath: Path, data: dict):
 async def fetch_page(session: aiohttp.ClientSession, notice_type: str, search_after: str = None) -> list:
     """Pobiera pojedynczą stronę wyników dla danego typu ogłoszenia."""
 
-    start_date = (datetime.now() - timedelta(days=60)).strftime("%Y-%m-%dT%H:%M:%S")
+    start_date = (datetime.now() - timedelta(days=45)).strftime("%Y-%m-%dT%H:%M:%S")
     end_date = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
 
     params = {
