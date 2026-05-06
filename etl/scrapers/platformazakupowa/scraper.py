@@ -1,5 +1,6 @@
 import asyncio
 import json
+import shutil
 from pathlib import Path
 
 import aiofiles
@@ -21,6 +22,8 @@ PARSED_DIR = DATA_DIR / "parsed"
 def setup_directories():
     """Tworzy strukturę katalogów."""
     for directory in [RAW_DIR, PARSED_DIR]:
+        if directory.exists():
+            shutil.rmtree(directory)
         directory.mkdir(parents=True, exist_ok=True)
 
 
@@ -185,9 +188,8 @@ async def get_pages_number(session: aiohttp.ClientSession):
     return total_pages
 
 async def main():
-    setup_directories()
-
     print("Inicjalizacja scrapera HTML platformazakupowa.pl...")
+    setup_directories()
 
     resolver = AsyncResolver(nameservers=["1.1.1.1", "8.8.8.8"])
     connector = TCPConnector(resolver=resolver)
