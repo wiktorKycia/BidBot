@@ -130,20 +130,16 @@ async def check_page_exists(session: aiohttp.ClientSession, page: int) -> bool:
 
 
 async def get_total_pages(session: aiohttp.ClientSession) -> int:
-    print("Rozpoczynam wyszukiwanie binarne w celu znalezienia ostatniej strony...")
-
     low = 1
     high = 5
 
     while await check_page_exists(session, high):
         low = high
         high *= 2
-        print(f"   Strona {low} istnieje. Przesuwam górną granicę szukania na {high}...")
 
     last_valid = low
     while low <= high:
         mid = (low + high) // 2
-        print(f"   Sprawdzam stronę {mid}...")
 
         if await check_page_exists(session, mid):
             last_valid = mid
@@ -151,7 +147,7 @@ async def get_total_pages(session: aiohttp.ClientSession) -> int:
         else:
             high = mid - 1
 
-    print(f"Ustalono dokładną liczbę stron do pobrania: {last_valid}")
+    print(f"Liczba stron do pobrania: {last_valid}")
     return last_valid
 
 
@@ -192,7 +188,7 @@ async def process_single_notice(session: aiohttp.ClientSession, item: dict) -> d
 
 
 async def process_list_page(session: aiohttp.ClientSession, page: int, last_run_date: datetime) -> int:
-    print(f"\nSprawdzam stronę {page} przez API...")
+    print(f"\nSprawdzanie strony {page}")
 
     limit = 50
     offset = (page - 1) * limit
@@ -225,7 +221,7 @@ async def process_list_page(session: aiohttp.ClientSession, page: int, last_run_
         try:
             async with session.post(API_LIST_URL, json=payload, headers=headers) as response:
                 if response.status != 200:
-                    print(f"Błąd HTTP {response.status} podczas pobierania API strony {page}")
+                    print(f"Błąd HTTP {response.status} podczas pobierania strony {page}")
                     return 0
                 api_data = await response.json()
         except Exception as e:
@@ -235,7 +231,7 @@ async def process_list_page(session: aiohttp.ClientSession, page: int, last_run_
     tenders = api_data.get("tenders", [])
 
     if not tenders:
-        print("Koniec wyników (puste API).")
+        print("Koniec wyników.")
         return 0
 
     tasks = []
@@ -247,7 +243,7 @@ async def process_list_page(session: aiohttp.ClientSession, page: int, last_run_
             try:
                 pub_date = datetime.fromisoformat(str(raw_pub_date).replace('Z', '+00:00'))
                 if pub_date <= last_run_date:
-                    print(f"Trafiono na stare ogłoszenie ({pub_date.strftime('%Y-%m-%d %H:%M')}). Pomijam resztę zapytania z tej strony.")
+                    print(f"Trafiono na stare ogłoszenie ({pub_date.strftime('%Y-%m-%d %H:%M')}). Reszta skip")
                     break
             except (ValueError, TypeError):
                 pass
@@ -266,7 +262,6 @@ async def process_list_page(session: aiohttp.ClientSession, page: int, last_run_
 
 
 async def main():
-    print("Inicjalizacja scrapera API Platforma Ofertowa...")
     setup_directories()
 
     last_run_date = get_last_run_date()
@@ -283,7 +278,7 @@ async def main():
         async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
             total_pages = await get_total_pages(session)
 
-            print(f"Uruchamiam równoległe pobieranie {total_pages} stron...")
+            print(f"Pobieranie {total_pages} stron...")
             tasks = [process_list_page(session, page, last_run_date) for page in range(1, total_pages + 1)]
 
             results = await asyncio.gather(*tasks)
