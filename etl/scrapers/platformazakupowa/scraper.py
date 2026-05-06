@@ -90,35 +90,24 @@ async def process_page(session: aiohttp.ClientSession, page_number: int):
 
     notices = doc.find_all("div", "product-info")
 
-    notice_urls = []
-
-    for notice in notices:
-        notice_urls.append(f"{BASE_URL}{notice.a['href']}")
-
-    resolver = AsyncResolver(nameservers=["1.1.1.1", "8.8.8.8"])
-    connector = TCPConnector(resolver=resolver)
-    async with aiohttp.ClientSession(connector=connector) as session:
-        tasks = [process_notice_details(session, notice_url) for notice_url in notice_urls]
-        details_list = await asyncio.gather(*tasks)
-
-
     for i, notice in enumerate(notices):
         notice_id = notice.a['href'].split('/')[-1] # ten numerek po słowie: /transakcja/
         notice_name = notice.a.text.strip()
+        notice_url = f"{BASE_URL}{notice.a['href']}"
         span = notice.find("span", "auction-time")
         submitting_offers_date_str = " ".join(span.b['title'].split()[:2]).strip()
         submitting_offers_date = datetime.strptime(submitting_offers_date_str, '%d-%m-%Y %H:%M:%S').strftime('%Y-%m-%dT%H:%M:%SZ')
 
-        details = details_list[i]
+        details = await process_notice_details(session, notice_url)
 
         parsed_data = {
             "id": notice_id,
             "source": "platformazakupowa.pl",
-            "url": notice_urls[i],
+            "url": notice_url,
             "title": notice_name,
-            "publication_date": "Zara bedzie",
+            "publication_date": "Zara bedzie", # tu pobrać prawdziwą datę publikacji w details
             "submitting_offers_date": submitting_offers_date,
-            "notice_number": "Unknown",
+            "notice_number": "Unknown", # tu nie można stwierdzić
             **details
         }
 
@@ -193,7 +182,7 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
             attachment_url_list.append(row.find("a", "proceeding-file-download")['href'][2:])
 
     return {
-        "client_name": organisation,
+        "client_name": organisation, # tu zwykle wywala \n, nie wiem czemu
         "description": description,
         "attachments": attachment_url_list
     }
