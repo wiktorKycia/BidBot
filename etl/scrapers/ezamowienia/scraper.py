@@ -80,7 +80,7 @@ def parse_notice(raw_data: dict) -> dict:
     return {
         "id": object_id,
         "source": "ezamowienia_bzp",
-        "url": f"https://ezamowienia.gov.pl/pl/bzp/ogloszenie/{object_id}",
+        "url": f"https://ezamowienia.gov.pl/mo-client-board/bzp/notice-details/id/{object_id}",
         "title": raw_data.get("orderObject"),
         "publication_date": raw_data.get("publicationDate"),
         "submitting_offers_date": raw_data.get("submittingOffersDate"),
