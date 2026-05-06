@@ -18,8 +18,6 @@ DATA_DIR = BASE_DIR / "data"
 RAW_DIR = DATA_DIR / "raw_html"
 PARSED_DIR = DATA_DIR / "parsed"
 
-# url = "https://platformazakupowa.pl/all?page=44&limit=100"
-
 def setup_directories():
     """Tworzy strukturę katalogów."""
     for directory in [RAW_DIR, PARSED_DIR]:
@@ -114,7 +112,7 @@ async def process_page(session: aiohttp.ClientSession, page_number: int):
             continue
 
         raw_filepath = RAW_DIR / f"{notice_id}.html"
-        await save_html(raw_filepath)
+        await save_html(raw_filepath, data)
 
         parsed_filepath = PARSED_DIR / f"{notice_id}.json"
         await save_json(parsed_filepath, parsed_data)
@@ -146,26 +144,40 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
     li_list = notice_doc.find_all("li", "proceeding-info-list-item")
     for li in li_list:
         if li.div.text == "Organizacja":
-            organisation: str = li.find("a").text
-            print(organisation)
+            try:
+                organisation: str = li.contents[0].text
+            except AttributeError as e:
+                print(notice_url)
+                raise e
             break
     else:
         organisation: str = "Nie podano nazwy"
 
     requirements = notice_doc.find("div", { "id": "requirements" })
-    description: str = requirements.text
+    description: str = requirements.text.strip() if requirements and requirements.text and requirements.text.strip() else "bez opisu"
 
     attachment_url_list: list[str] = []
     attachments_table = notice_doc.find("table", {"id": "allAttachmentsTable"})
-    table_rows = attachments_table.tbody.find_all("tr")
-    for row in table_rows:
-        attachment_url_list.append(row.find("a", "proceeding-file-download")['href'][2:])
+    if attachments_table:
+        table_rows = attachments_table.tbody.find_all("tr")
+        for row in table_rows:
+            attachment_url_list.append(row.find("a", "proceeding-file-download")['href'][2:])
 
     return {
         "client_name": organisation,
         "description": description,
         "attachments": attachment_url_list
     }
+
+async def get_pages_number(session: aiohttp.ClientSession):
+    """Pobiera informację o ilości stron paginacji, na jakich są ogłoszenia"""
+    data = await fetch_page(session, 1)
+
+    doc = BeautifulSoup(data, "html.parser")
+    ul = doc.find("ul", "pagination")
+    li_list = ul.find_all("li")
+    total_pages:int = int(li_list[-2].a.text)
+    return total_pages
 
 async def main():
     setup_directories()
@@ -175,10 +187,9 @@ async def main():
     resolver = AsyncResolver(nameservers=["1.1.1.1", "8.8.8.8"])
     connector = TCPConnector(resolver=resolver)
     async with aiohttp.ClientSession(connector=connector) as session:
-        tasks = []
-
-
-        asyncio.gather(*tasks)
+        total_pages: int = await get_pages_number(session)
+        tasks = [process_page(session, page_number) for page_number in range(1, total_pages+1)]
+        await asyncio.gather(*tasks)
 
     print("Zakończono.")
 
