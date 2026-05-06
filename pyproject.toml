@@ -10,5 +10,6 @@ dependencies = [
     "aiohttp>=3.13.5",
     "asyncio>=4.0.0",
     "beautifulsoup4>=4.14.3",
+    "lxml>=6.1.0",
     "requests>=2.33.1",
 ]
