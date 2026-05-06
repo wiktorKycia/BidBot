@@ -53,13 +53,27 @@ def is_tender_open(raw_data: dict) -> bool:
 def parse_notice(raw_data: dict) -> dict:
     """
     Normalizacja danych do ujednoliconego formatu dla bota.
-    Wyczyszczenie HTML z treści ogłoszenia.
+    Wyczyszczenie HTML z treści ogłoszenia oraz ekstrakcja linków do dokumentacji.
     """
     html_body = raw_data.get("htmlBody", "")
     description_text = ""
+    attachments = []
+
     if html_body:
         soup = BeautifulSoup(html_body, "html.parser")
+
         description_text = soup.get_text(separator=" ", strip=True)
+
+        for a_tag in soup.find_all("a", href=True):
+            href = a_tag["href"]
+            text = a_tag.get_text(strip=True)
+
+            if href.startswith("http"):
+                if not any(att["url"] == href for att in attachments):
+                    attachments.append({
+                        "text": text if text else "Link",
+                        "url": href
+                    })
 
     object_id = raw_data.get("objectId")
 
@@ -73,7 +87,7 @@ def parse_notice(raw_data: dict) -> dict:
         "notice_number": raw_data.get("bzpNumber") or raw_data.get("noticeNumber"),
         "client_name": raw_data.get("organizationName"),
         "description": description_text,
-        "raw_html": html_body
+        "attachments": attachments
     }
 
 
@@ -86,7 +100,7 @@ async def save_json(filepath: Path, data: dict):
 async def fetch_page(session: aiohttp.ClientSession, notice_type: str, search_after: str = None) -> list:
     """Pobiera pojedynczą stronę wyników dla danego typu ogłoszenia."""
 
-    start_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%S")
+    start_date = (datetime.now() - timedelta(days=60)).strftime("%Y-%m-%dT%H:%M:%S")
     end_date = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
 
     params = {
@@ -155,7 +169,7 @@ async def process_notice_type(session: aiohttp.ClientSession, notice_type: str):
     print(f"Zakończono typ {notice_type}. Pobranych i zapisanych otwartych przetargów: {total_downloaded}")
 
 
-async def main():
+async def scrape():
     setup_directories()
 
     print("Inicjalizacja scrapera API e-Zamówienia (BZP)...")
@@ -169,4 +183,4 @@ async def main():
     print("Zakończono.")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(scrape())
