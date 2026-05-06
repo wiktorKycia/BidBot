@@ -1,0 +1,10 @@
+[project]
+name = "bidbot"
+version = "0.1.0"
+requires-python = ">=3.14"
+dependencies = [
+    "aiofiles>=25.1.0",
+    "aiohttp[speedups]>=3.13.5",
+    "beautifulsoup4>=4.14.3",
+    "requests>=2.33.1",
+]
