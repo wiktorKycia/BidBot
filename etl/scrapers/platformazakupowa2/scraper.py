@@ -149,10 +149,19 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
         for row in table_rows:
             a_tag = row.find("a", class_="proceeding-file-download")
             if a_tag and 'href' in a_tag.attrs:
+                # filename
+                td_with_filename = row.find("td", class_="text-left")
+                filename = td_with_filename.text.strip()
+
+                # file url
                 href = a_tag['href']
                 if href.startswith(".."):
                     href = href[2:]
-                attachment_url_list.append(f"https:{href}" if not href.startswith("http") else href)
+
+                attachment_url_list.append({
+                    "url": f"https:{href}" if not href.startswith("http") else href,
+                    "filename": filename
+                })
 
     return {
         "client_name": organisation,
