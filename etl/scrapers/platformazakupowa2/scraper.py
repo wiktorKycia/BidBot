@@ -17,6 +17,7 @@ BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 RAW_DIR = DATA_DIR / "raw_html"
 PARSED_DIR = DATA_DIR / "parsed"
+ATTACHMENTS_DIR = DATA_DIR / "attachments"
 
 SEMAPHORE = asyncio.Semaphore(15)
 
@@ -55,8 +56,8 @@ async def save_html(filepath: Path, data: str):
 
 
 async def download_file(session: aiohttp.ClientSession, url: str, output_dir: Path, filename: str):
-    if not filename:
-        filename = Path(url).name
+    # if not filename:
+    #     filename = Path(url).name
     filepath = output_dir / filename
     async with session.get(url) as response:
         if response.status == 200:
@@ -152,6 +153,8 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
                 # filename
                 td_with_filename = row.find("td", class_="text-left")
                 filename = td_with_filename.text.strip()
+                if filename.split('.') in ['zip', '7z']:
+                    filename = None
 
                 # file url
                 href = a_tag['href']
@@ -163,6 +166,15 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
                     "filename": filename
                 })
 
+    tasks_to_download = []
+    print(attachments_list)
+    for attachment in attachments_list:
+        if not attachment.get('filename'):
+            continue
+        tasks_to_download.append(download_file(session, attachment.get('url'), ATTACHMENTS_DIR, attachment.get('filename')))
+
+    if tasks_to_download:
+        await asyncio.gather(*tasks_to_download)
 
     return {
         "client_name": organisation,
