@@ -56,12 +56,12 @@ async def save_html(filepath: Path, data: str):
         await f.write(data)
 
 
-def sanitize_filename(filename: str) -> str | None:
+def sanitize_filename(filename: str, fallback: str = "attachment") -> str:
     if not filename:
-        return None
+        return fallback
     basename = Path(filename.replace("\\", "/")).name.strip()
     sanitized = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", basename).strip(" .")
-    return sanitized or None
+    return sanitized or fallback
 
 
 async def download_file(session: aiohttp.ClientSession, url: str, output_dir: Path, filename: str):
@@ -166,13 +166,15 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
                 # filename
                 td_with_filename = row.find("td", class_="text-left")
                 filename = td_with_filename.text.strip()
-                if filename.split('.')[-1] in ['zip', '7z']:
+                extension = Path(filename).suffix.lower().lstrip(".")
+                if extension in ['zip', '7z']:
                     filename = None
                 else:
                     filename = sanitize_filename(filename)
                     if filename:
-                        stem = Path(filename).stem
-                        suffix = Path(filename).suffix
+                        filename_path = Path(filename)
+                        stem = filename_path.stem
+                        suffix = filename_path.suffix
                         counter = 1
                         unique_filename = filename
                         while unique_filename in used_filenames:
