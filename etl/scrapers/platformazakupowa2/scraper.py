@@ -60,7 +60,7 @@ def sanitize_filename(filename: str, fallback: str = "attachment") -> str:
     if not filename:
         return fallback
     basename = Path(filename.replace("\\", "/")).name.strip()
-    sanitized = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", basename).strip(" .")
+    sanitized = re.sub(r'[<>:"/\\|?*\x00-\x1f\x7f-\x9f]', "_", basename).strip(" .")
     return sanitized or fallback
 
 
@@ -157,6 +157,7 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
 
     attachments_list = []
     used_filenames = set()
+    filename_counters = {}
     attachments_table = notice_doc.find("table", {"id": "allAttachmentsTable"})
     if attachments_table:
         table_rows = attachments_table.tbody.find_all("tr")
@@ -165,21 +166,21 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
             if a_tag and 'href' in a_tag.attrs:
                 # filename
                 td_with_filename = row.find("td", class_="text-left")
-                filename = td_with_filename.text.strip()
+                filename = sanitize_filename(td_with_filename.text.strip())
                 extension = Path(filename).suffix.lower().lstrip(".")
                 if extension in ['zip', '7z']:
                     filename = None
                 else:
-                    filename = sanitize_filename(filename)
                     if filename:
                         filename_path = Path(filename)
                         stem = filename_path.stem
                         suffix = filename_path.suffix
-                        counter = 1
-                        unique_filename = filename
+                        counter = filename_counters.get(filename, 0)
+                        unique_filename = filename if counter == 0 else f"{stem}_{counter}{suffix}"
                         while unique_filename in used_filenames:
-                            unique_filename = f"{stem}_{counter}{suffix}"
                             counter += 1
+                            unique_filename = f"{stem}_{counter}{suffix}"
+                        filename_counters[filename] = counter + 1
                         filename = unique_filename
                         used_filenames.add(filename)
 
