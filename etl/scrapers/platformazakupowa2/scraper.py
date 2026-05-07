@@ -128,6 +128,7 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
 
     notice_doc = BeautifulSoup(data, "lxml")
     organisation = "Nie podano nazwy"
+    order_type = None
     publication_date = None
 
     li_list = notice_doc.find_all("li", class_="proceeding-info-list-item")
@@ -153,6 +154,11 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
                 except Exception as e:
                     print(f"Blad parsowania daty publikacji: {raw_date}")
                     publication_date = raw_date
+
+        elif "Rodzaj" in label_text:
+            texts = list(li.stripped_strings)
+            if len(texts) > 1:
+                order_type = " ".join(texts[1:]).strip()
 
     requirements = notice_doc.find("div", {"id": "requirements"})
     description = requirements.text.strip() if requirements and requirements.text.strip() else "bez opisu"
@@ -214,6 +220,7 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
 
     return {
         "client_name": organisation,
+        "order_type": order_type,
         "publication_date": publication_date,
         "description": description,
         "raw_html": notice_doc.prettify(),
