@@ -1,10 +1,11 @@
-import asyncio
 import json
+import shutil
 from pathlib import Path
 from datetime import datetime, timezone
 
 import aiofiles
 import aiohttp
+import asyncio
 from aiohttp import TCPConnector
 from aiohttp.resolver import AsyncResolver
 from bs4 import BeautifulSoup
@@ -22,6 +23,8 @@ SEMAPHORE = asyncio.Semaphore(15)
 
 def setup_directories():
     for directory in [RAW_DIR, PARSED_DIR]:
+        if directory.exists():
+            shutil.rmtree(directory)
         directory.mkdir(parents=True, exist_ok=True)
 
 
