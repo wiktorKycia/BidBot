@@ -241,8 +241,20 @@ async def process_page(session: aiohttp.ClientSession, page_number: int) -> int:
         if not span or not span.find('b') or 'title' not in span.b.attrs:
             return
 
-        submitting_offers_date_str = " ".join(span.b['title'].split()[:2]).strip()
-        submitting_offers_date = datetime.strptime(submitting_offers_date_str, '%d-%m-%Y %H:%M:%S').strftime('%Y-%m-%dT%H:%M:%SZ')
+        submitting_offers_title = span.b['title']
+        submitting_offers_date_str = " ".join(submitting_offers_title.split()[:2]).strip()
+
+        try:
+            submitting_offers_date = datetime.strptime(
+                submitting_offers_date_str,
+                '%d-%m-%Y %H:%M:%S'
+            ).strftime('%Y-%m-%dT%H:%M:%SZ')
+        except (TypeError, ValueError):
+            print(
+                f"Pominięto ogłoszenie {notice_url}: "
+                f"nieprawidłowy format daty w auction-time title: {submitting_offers_title!r}"
+            )
+            return
 
         if not is_tender_open(submitting_offers_date):
             return
