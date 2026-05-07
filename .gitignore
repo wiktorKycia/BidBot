@@ -2,5 +2,8 @@
 .idea
 __pycache__
 etl/data
+/etl/scrapers/ezamowienia/data/parsed
+/etl/scrapers/ezamowienia/data/raw
+
 /etl/scrapers/platformazakupowa/data
 data
