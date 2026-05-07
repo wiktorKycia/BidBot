@@ -101,7 +101,7 @@ async def fetch_notice_details(session: aiohttp.ClientSession, notice_url: str):
         return ""
 
 
-async def process_notice_details(session: aiohttp.ClientSession, notice_url: str) -> dict:
+async def process_notice_details(session: aiohttp.ClientSession, notice_url: str, notice_id: str) -> dict:
     data = await fetch_notice_details(session, notice_url)
     if not data:
         return {
@@ -171,7 +171,9 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
     for attachment in attachments_list:
         if not attachment.get('filename'):
             continue
-        tasks_to_download.append(download_file(session, attachment.get('url'), ATTACHMENTS_DIR, attachment.get('filename')))
+        directory = ATTACHMENTS_DIR / notice_id
+        directory.mkdir(parents=True, exist_ok=True)
+        tasks_to_download.append(download_file(session, attachment.get('url'), directory, attachment.get('filename')))
 
     if tasks_to_download:
         await asyncio.gather(*tasks_to_download)
@@ -219,7 +221,7 @@ async def process_page(session: aiohttp.ClientSession, page_number: int) -> int:
         if not notice_id or is_downloaded(notice_id):
             return
 
-        details = await process_notice_details(session, notice_url)
+        details = await process_notice_details(session, notice_url, notice_id)
 
         parsed_data = {
             "id": notice_id,
