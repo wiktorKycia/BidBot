@@ -1,4 +1,5 @@
 import json
+import re
 import shutil
 from pathlib import Path
 from datetime import datetime, timezone
@@ -53,6 +54,14 @@ async def save_json(filepath: Path, data: dict):
 async def save_html(filepath: Path, data: str):
     async with aiofiles.open(filepath, mode="w", encoding="utf-8") as f:
         await f.write(data)
+
+
+def sanitize_filename(filename: str) -> str | None:
+    if not filename:
+        return None
+    basename = Path(filename.replace("\\", "/")).name.strip()
+    sanitized = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", basename).strip(" .")
+    return sanitized or None
 
 
 async def download_file(session: aiohttp.ClientSession, url: str, output_dir: Path, filename: str):
@@ -147,6 +156,7 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
     description = requirements.text.strip() if requirements and requirements.text.strip() else "bez opisu"
 
     attachments_list = []
+    used_filenames = set()
     attachments_table = notice_doc.find("table", {"id": "allAttachmentsTable"})
     if attachments_table:
         table_rows = attachments_table.tbody.find_all("tr")
@@ -158,6 +168,18 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
                 filename = td_with_filename.text.strip()
                 if filename.split('.')[-1] in ['zip', '7z']:
                     filename = None
+                else:
+                    filename = sanitize_filename(filename)
+                    if filename:
+                        stem = Path(filename).stem
+                        suffix = Path(filename).suffix
+                        counter = 1
+                        unique_filename = filename
+                        while unique_filename in used_filenames:
+                            unique_filename = f"{stem}_{counter}{suffix}"
+                            counter += 1
+                        filename = unique_filename
+                        used_filenames.add(filename)
 
                 # file url
                 href = a_tag['href']
