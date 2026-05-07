@@ -54,6 +54,19 @@ async def save_html(filepath: Path, data: str):
         await f.write(data)
 
 
+async def download_file(session: aiohttp.ClientSession, url: str, output_dir: Path, filename: str):
+    if not filename:
+        filename = Path(url).name
+    filepath = output_dir / filename
+    async with session.get(url) as response:
+        if response.status == 200:
+            async with aiofiles.open(filepath, 'wb') as f:
+                await f.write(await response.read())
+            print(f"Downloaded {filename}")
+        else:
+            print(f"Failed to download {filename}: {response.status}")
+
+
 async def fetch_page(session: aiohttp.ClientSession, page_number: int) -> str:
     params = {"page": page_number, "limit": 100}
     async with SEMAPHORE:
