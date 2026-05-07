@@ -142,7 +142,7 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
     requirements = notice_doc.find("div", {"id": "requirements"})
     description = requirements.text.strip() if requirements and requirements.text.strip() else "bez opisu"
 
-    attachment_url_list = []
+    attachments_list = []
     attachments_table = notice_doc.find("table", {"id": "allAttachmentsTable"})
     if attachments_table:
         table_rows = attachments_table.tbody.find_all("tr")
@@ -158,17 +158,18 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
                 if href.startswith(".."):
                     href = href[2:]
 
-                attachment_url_list.append({
+                attachments_list.append({
                     "url": f"https:{href}" if not href.startswith("http") else href,
                     "filename": filename
                 })
+
 
     return {
         "client_name": organisation,
         "publication_date": publication_date,
         "description": description,
         "raw_html": notice_doc.prettify(),
-        "attachments": attachment_url_list
+        "attachments": attachments_list
     }
 
 
