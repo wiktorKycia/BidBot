@@ -18,6 +18,12 @@ DATA_DIR = BASE_DIR / "data"
 RAW_DIR = DATA_DIR / "raw"
 PARSED_DIR = DATA_DIR / "parsed"
 
+ORDER_TYPE_DICT = {
+  "Delivery": "Dostawy",
+  "Services": "Usługa",
+  "Works": "Robota budowlana"
+}
+
 
 def setup_directories():
     """Tworzy strukturę katalogów."""
@@ -82,6 +88,7 @@ def parse_notice(raw_data: dict) -> dict:
         "source": "ezamowienia_bzp",
         "url": f"https://ezamowienia.gov.pl/mo-client-board/bzp/notice-details/id/{object_id}",
         "title": raw_data.get("orderObject"),
+        "order_type": ORDER_TYPE_DICT.get(raw_data.get('orderType')),
         "publication_date": raw_data.get("publicationDate"),
         "submitting_offers_date": raw_data.get("submittingOffersDate"),
         "notice_number": raw_data.get("bzpNumber") or raw_data.get("noticeNumber"),
