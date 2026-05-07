@@ -136,7 +136,7 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
                 href = a_tag['href']
                 if href.startswith(".."):
                     href = href[2:]
-                attachment_url_list.append(f"{BASE_URL}{href}" if not href.startswith("http") else href)
+                attachment_url_list.append(f"https:{href}" if not href.startswith("http") else href)
 
     return {
         "client_name": organisation,
