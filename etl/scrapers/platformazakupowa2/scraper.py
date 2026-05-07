@@ -59,13 +59,16 @@ async def download_file(session: aiohttp.ClientSession, url: str, output_dir: Pa
     # if not filename:
     #     filename = Path(url).name
     filepath = output_dir / filename
-    async with session.get(url) as response:
-        if response.status == 200:
-            async with aiofiles.open(filepath, 'wb') as f:
-                await f.write(await response.read())
-            # print(f"Downloaded {filename}")
-        else:
-            print(f"Failed to download {filename}: {response.status}")
+    async with SEMAPHORE:
+        async with session.get(url) as response:
+            if response.status == 200:
+                async with aiofiles.open(filepath, 'wb') as f:
+                    async for chunk in response.content.iter_chunked(64 * 1024):
+                        if chunk:
+                            await f.write(chunk)
+                # print(f"Downloaded {filename}")
+            else:
+                print(f"Failed to download {filename}: {response.status}")
 
 
 async def fetch_page(session: aiohttp.ClientSession, page_number: int) -> str:
