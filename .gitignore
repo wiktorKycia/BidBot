@@ -3,3 +3,4 @@
 __pycache__
 etl/data
 /etl/scrapers/platformazakupowa/data
+data
