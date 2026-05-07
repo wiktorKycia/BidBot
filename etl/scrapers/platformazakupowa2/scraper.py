@@ -121,7 +121,7 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
                 raw_date = " ".join(texts[1:]).strip()
                 try:
                     clean_date_str = " ".join(raw_date.split()[:2])
-                    publication_date = datetime.strptime(clean_date_str, '%d-%m-%Y %H:%M:%S').strftime('%Y-%m-%dT%H:%M:%SZ')
+                    publication_date = datetime.strptime(clean_date_str, '%Y-%m-%d %H:%M:%S').strftime('%Y-%m-%dT%H:%M:%SZ')
                 except Exception as e:
                     print(f"Blad parsowania daty publikacji: {raw_date}")
                     publication_date = raw_date
