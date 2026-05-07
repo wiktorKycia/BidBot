@@ -208,7 +208,7 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
         tasks_to_download.append(download_file(session, attachment.get('url'), directory, attachment.get('filename')))
 
     if tasks_to_download:
-        await asyncio.gather(*tasks_to_download)
+        await asyncio.gather(*tasks_to_download, return_exceptions=True)
 
     return {
         "client_name": organisation,
@@ -292,7 +292,7 @@ async def process_page(session: aiohttp.ClientSession, page_number: int) -> int:
         tasks_to_download.append(process_single_notice(notice))
 
     if tasks_to_download:
-        await asyncio.gather(*tasks_to_download)
+        await asyncio.gather(*tasks_to_download, return_exceptions=True)
 
     print(f"Zakończono stronę {page_number}. Zapisano nowych przetargów: {total_new_downloads}")
     return total_new_downloads
