@@ -160,41 +160,43 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
     filename_counters = {}
     attachments_table = notice_doc.find("table", {"id": "allAttachmentsTable"})
     if attachments_table:
-        table_rows = attachments_table.tbody.find_all("tr")
-        for row in table_rows:
-            a_tag = row.find("a", class_="proceeding-file-download")
-            if a_tag and 'href' in a_tag.attrs:
-                # filename
-                td_with_filename = row.find("td", class_="text-left")
-                if not td_with_filename:
-                    continue
-                filename = sanitize_filename(td_with_filename.text.strip())
-                extension = Path(filename).suffix.lower().lstrip(".")
-                if extension in ['zip', '7z']:
-                    filename = None
-                else:
-                    if filename:
-                        filename_path = Path(filename)
-                        stem = filename_path.stem
-                        suffix = filename_path.suffix
-                        counter = filename_counters.get(filename, 0)
-                        unique_filename = filename if counter == 0 else f"{stem}_{counter}{suffix}"
-                        while unique_filename in used_filenames:
-                            counter += 1
-                            unique_filename = f"{stem}_{counter}{suffix}"
-                        filename_counters[filename] = counter + 1
-                        filename = unique_filename
-                        used_filenames.add(filename)
+        attachments_tbody = attachments_table.find("tbody")
+        if attachments_tbody:
+            table_rows = attachments_table.tbody.find_all("tr")
+            for row in table_rows:
+                a_tag = row.find("a", class_="proceeding-file-download")
+                if a_tag and 'href' in a_tag.attrs:
+                    # filename
+                    td_with_filename = row.find("td", class_="text-left")
+                    if not td_with_filename:
+                        continue
+                    filename = sanitize_filename(td_with_filename.text.strip())
+                    extension = Path(filename).suffix.lower().lstrip(".")
+                    if extension in ['zip', '7z']:
+                        filename = None
+                    else:
+                        if filename:
+                            filename_path = Path(filename)
+                            stem = filename_path.stem
+                            suffix = filename_path.suffix
+                            counter = filename_counters.get(filename, 0)
+                            unique_filename = filename if counter == 0 else f"{stem}_{counter}{suffix}"
+                            while unique_filename in used_filenames:
+                                counter += 1
+                                unique_filename = f"{stem}_{counter}{suffix}"
+                            filename_counters[filename] = counter + 1
+                            filename = unique_filename
+                            used_filenames.add(filename)
 
-                # file url
-                href = a_tag['href']
-                if href.startswith(".."):
-                    href = href[2:]
+                    # file url
+                    href = a_tag['href']
+                    if href.startswith(".."):
+                        href = href[2:]
 
-                attachments_list.append({
-                    "url": f"https:{href}" if not href.startswith("http") else href,
-                    "filename": filename
-                })
+                    attachments_list.append({
+                        "url": f"https:{href}" if not href.startswith("http") else href,
+                        "filename": filename
+                    })
 
     tasks_to_download = []
     # print(attachments_list)
