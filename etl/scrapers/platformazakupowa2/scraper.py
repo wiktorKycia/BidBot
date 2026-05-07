@@ -22,10 +22,12 @@ ATTACHMENTS_DIR = DATA_DIR / "attachments"
 
 SEMAPHORE = asyncio.Semaphore(15)
 
+CLEAN_DOWNLOAD = True
+
 
 def setup_directories():
     for directory in [RAW_DIR, PARSED_DIR, ATTACHMENTS_DIR]:
-        if directory.exists():
+        if directory.exists() and CLEAN_DOWNLOAD:
             shutil.rmtree(directory)
         directory.mkdir(parents=True, exist_ok=True)
 
