@@ -112,7 +112,7 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
             if len(texts) > 1:
                 organisation = " ".join(texts[1:])
 
-        elif "Opublikowano" in label_text:
+        elif "Opublikowano" in label_text or "Zamieszczenia" in label_text:
             texts = list(li.stripped_strings)
             if len(texts) > 1:
                 raw_date = " ".join(texts[1:]).strip()
