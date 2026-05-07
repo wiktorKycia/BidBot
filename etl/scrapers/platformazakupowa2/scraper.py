@@ -23,7 +23,7 @@ SEMAPHORE = asyncio.Semaphore(15)
 
 
 def setup_directories():
-    for directory in [RAW_DIR, PARSED_DIR]:
+    for directory in [RAW_DIR, PARSED_DIR, ATTACHMENTS_DIR]:
         if directory.exists():
             shutil.rmtree(directory)
         directory.mkdir(parents=True, exist_ok=True)
@@ -63,7 +63,7 @@ async def download_file(session: aiohttp.ClientSession, url: str, output_dir: Pa
         if response.status == 200:
             async with aiofiles.open(filepath, 'wb') as f:
                 await f.write(await response.read())
-            print(f"Downloaded {filename}")
+            # print(f"Downloaded {filename}")
         else:
             print(f"Failed to download {filename}: {response.status}")
 
@@ -153,7 +153,7 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
                 # filename
                 td_with_filename = row.find("td", class_="text-left")
                 filename = td_with_filename.text.strip()
-                if filename.split('.') in ['zip', '7z']:
+                if filename.split('.')[-1] in ['zip', '7z']:
                     filename = None
 
                 # file url
@@ -167,7 +167,7 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
                 })
 
     tasks_to_download = []
-    print(attachments_list)
+    # print(attachments_list)
     for attachment in attachments_list:
         if not attachment.get('filename'):
             continue
