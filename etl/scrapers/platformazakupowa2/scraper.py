@@ -285,7 +285,8 @@ async def process_page(session: aiohttp.ClientSession, page_number: int) -> int:
             "submitting_offers_date": submitting_offers_date,
             "client_name": details.get("client_name"),
             "description": details.get("description"),
-            "attachments": details.get("attachments")
+            "attachments": details.get("attachments"),
+            "order_type": details.get("order_type")
         }
 
         if details.get('raw_html'):
