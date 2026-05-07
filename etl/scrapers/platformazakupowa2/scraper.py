@@ -166,6 +166,8 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
             if a_tag and 'href' in a_tag.attrs:
                 # filename
                 td_with_filename = row.find("td", class_="text-left")
+                if not td_with_filename:
+                    continue
                 filename = sanitize_filename(td_with_filename.text.strip())
                 extension = Path(filename).suffix.lower().lstrip(".")
                 if extension in ['zip', '7z']:
