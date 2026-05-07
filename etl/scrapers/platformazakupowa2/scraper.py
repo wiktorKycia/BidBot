@@ -190,7 +190,6 @@ async def process_page(session: aiohttp.ClientSession, page_number: int) -> int:
             "title": notice_name,
             "publication_date": details.get("publication_date"),
             "submitting_offers_date": submitting_offers_date,
-            "notice_number": "Unknown",
             "client_name": details.get("client_name"),
             "description": details.get("description"),
             "attachments": details.get("attachments")
