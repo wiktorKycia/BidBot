@@ -108,8 +108,8 @@ async def fetch_notice_details(session: aiohttp.ClientSession, notice_url: str):
                 except Exception as e:
                     print(f"Błąd:  {notice_url.split('/')[-1]}: {e}")
                     return ""
-    except asyncio.TimeoutError:
-        print("Timeout")
+    except (asyncio.TimeoutError, aiohttp.ClientError) as e:
+        print(f"Błąd pobierania szczegółów {notice_url.split('/')[-1]}: {e}")
         return ""
 
 
