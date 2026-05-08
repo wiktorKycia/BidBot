@@ -1,10 +1,11 @@
+import contextlib
 import json
 import re
 import hashlib
 import logging
 import asyncio
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from urllib.parse import urljoin
 
 import aiofiles
@@ -34,7 +35,7 @@ def is_downloaded(notice_id: str) -> bool:
 
 def is_tender_open(deadline_dt: datetime) -> bool:
     if deadline_dt:
-        return deadline_dt > datetime.now(timezone.utc)
+        return deadline_dt > datetime.now(UTC)
     return False
 
 
@@ -91,10 +92,8 @@ async def download_file(session: aiohttp.ClientSession, url: str, output_dir: Pa
         except Exception as e:
             logger.error(f"Błąd pobierania {filename}: {e}")
             if temp_filepath.exists():
-                try:
+                with contextlib.suppress(Exception):
                     temp_filepath.unlink()
-                except Exception:
-                    pass
             return False
 
 
@@ -151,7 +150,7 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
                     raw_date = " ".join(texts[1:]).strip()
                     clean_date_str = " ".join(raw_date.split()[:2])
                     parsed_dt = datetime.strptime(clean_date_str, '%Y-%m-%d %H:%M:%S')
-                    publication_date_dt = parsed_dt.replace(tzinfo=timezone.utc)
+                    publication_date_dt = parsed_dt.replace(tzinfo=UTC)
                 except Exception:
                     pass
 
@@ -195,10 +194,7 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
                     logger.error(f"Błąd gather w załącznikach {notice_id}: {res}")
 
     requirements = notice_doc.find("div", {"id": "requirements"})
-    if requirements:
-        desc = requirements.get_text(strip=True)
-    else:
-        desc = "brak"
+    desc = requirements.get_text(strip=True) if requirements else "brak"
 
     return {
         "client_name": organisation,
@@ -236,7 +232,7 @@ async def process_page(session: aiohttp.ClientSession, page_number: int, semapho
         try:
             title_text = span.b['title']
             deadline_str = " ".join(title_text.split()[:2]).strip()
-            deadline_dt = datetime.strptime(deadline_str, '%d-%m-%Y %H:%M:%S').replace(tzinfo=timezone.utc)
+            deadline_dt = datetime.strptime(deadline_str, '%d-%m-%Y %H:%M:%S').replace(tzinfo=UTC)
         except Exception:
             return False
 

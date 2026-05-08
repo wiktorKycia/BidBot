@@ -1,6 +1,6 @@
 import asyncio
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 from pathlib import Path
 
 import aiofiles
@@ -47,8 +47,8 @@ def is_tender_open(raw_data: dict) -> bool:
         return False
 
     try:
-        deadline = datetime.fromisoformat(deadline_str.replace('Z', '+00:00'))
-        now = datetime.now(timezone.utc)
+        deadline = datetime.fromisoformat(deadline_str)
+        now = datetime.now(UTC)
 
         return deadline > now
     except ValueError as e:
