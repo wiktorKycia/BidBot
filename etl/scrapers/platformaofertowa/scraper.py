@@ -74,7 +74,7 @@ def extract_direct_url(url: str) -> str:
 
 @backoff.on_exception(
     backoff.expo,
-    (aiohttp.ClientError, asyncio.TimeoutError),
+    Exception,
     max_tries=3,
     logger=logger,
 )

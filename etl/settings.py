@@ -7,6 +7,7 @@ RAW_DIR = DATA_DIR / "raw_html"
 PARSED_DIR = DATA_DIR / "parsed"
 ATTACHMENTS_DIR = DATA_DIR / "attachments"
 LOG_DIR = Path("logs")
+MAX_ATTACHMENTS = 15
 
 for d in [RAW_DIR, PARSED_DIR, ATTACHMENTS_DIR, LOG_DIR]:
     if not d.exists():

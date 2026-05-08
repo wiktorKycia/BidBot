@@ -18,7 +18,11 @@ DATA_DIR = BASE_DIR / "data"
 RAW_DIR = DATA_DIR / "raw"
 PARSED_DIR = DATA_DIR / "parsed"
 
-ORDER_TYPE_DICT = {"Delivery": "Dostawy", "Services": "Usługa", "Works": "Robota budowlana"}
+ORDER_TYPE_DICT = {
+    "Delivery": "Dostawy",
+    "Services": "Usługi",
+    "Works": "Roboty budowlane",
+}
 
 
 def setup_directories():

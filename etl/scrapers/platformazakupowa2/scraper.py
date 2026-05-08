@@ -7,6 +7,7 @@ import re
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urljoin
+from zoneinfo import ZoneInfo
 
 import aiofiles
 import aiohttp
@@ -15,7 +16,7 @@ from aiohttp import TCPConnector
 from aiohttp.resolver import AsyncResolver
 from bs4 import BeautifulSoup
 
-from etl.settings import ATTACHMENTS_DIR, PARSED_DIR, RAW_DIR, setup_logging
+from etl.settings import ATTACHMENTS_DIR, MAX_ATTACHMENTS, PARSED_DIR, RAW_DIR, setup_logging
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -58,38 +59,45 @@ def sanitize_filename(filename: str, fallback: str = "attachment") -> str:
     return sanitized
 
 
-@backoff.on_exception(backoff.expo, (aiohttp.ClientError, asyncio.TimeoutError), max_tries=3)
+@backoff.on_exception(backoff.expo, (aiohttp.ClientError, asyncio.TimeoutError, Exception), max_tries=3)
 async def download_file(session: aiohttp.ClientSession, url: str, output_dir: Path, filename: str, semaphore: asyncio.Semaphore) -> bool:
     filepath = output_dir / filename
     if filepath.exists():
-        return True
+        file_stat = filepath.stat()
+        if file_stat.st_size > 0:
+            return True
 
-    url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
-    temp_filepath = filepath.with_suffix(f".{url_hash}.tmp")
+    m = hashlib.md5(url.encode())
+    url_hash = m.hexdigest()[:8]
+    temp_filename = f".{url_hash}.tmp"
+    temp_filepath = filepath.with_suffix(temp_filename)
 
     async with semaphore:
         try:
             async with session.get(url, timeout=60) as response:
                 response.raise_for_status()
 
-                size = 0
+                size_counter = 0
                 async with aiofiles.open(temp_filepath, "wb") as f:
                     async for chunk in response.content.iter_chunked(64 * 1024):
-                        await f.write(chunk)
-                        size += len(chunk)
+                        if chunk:
+                            await f.write(chunk)
+                            size_counter += len(chunk)
 
                 cl = response.headers.get("Content-Length")
-                if cl and int(cl) != size:
-                    raise Exception(f"Niezgodny rozmiar: {size}/{cl}")
+                if cl and int(cl) != size_counter:
+                    raise Exception(f"Niezgodny rozmiar pliku: {size_counter}/{cl}")
 
                 temp_filepath.replace(filepath)
                 return True
+
         except Exception as e:
             logger.error(f"Błąd pobierania {filename}: {e}")
+
             if temp_filepath.exists():
                 with contextlib.suppress(Exception):
                     temp_filepath.unlink()
-            return False
+            raise e
 
 
 async def fetch_page(session: aiohttp.ClientSession, page_number: int, semaphore: asyncio.Semaphore) -> str:
@@ -145,7 +153,7 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
                     raw_date = " ".join(texts[1:]).strip()
                     clean_date_str = " ".join(raw_date.split()[:2])
                     parsed_dt = datetime.strptime(clean_date_str, "%Y-%m-%d %H:%M:%S")
-                    publication_date_dt = parsed_dt.replace(tzinfo=UTC)
+                    publication_date_dt = parsed_dt.replace(tzinfo=ZoneInfo("Europe/Warsaw")).astimezone(UTC)
                 except Exception:
                     pass
 
@@ -174,21 +182,30 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
 
     if attachments_list:
         notice_dir = ATTACHMENTS_DIR / notice_id
-        to_download = [a for a in attachments_list if a["filename"]]
+
+        downloadable = []
+        for a in attachments_list:
+            if a["filename"]:
+                downloadable.append(a)
+
+        to_download = downloadable[:MAX_ATTACHMENTS]
 
         if to_download:
-            notice_dir.mkdir(parents=True, exist_ok=True)
+            if not notice_dir.exists():
+                notice_dir.mkdir(parents=True, exist_ok=True)
+
             tasks = []
             for att in to_download:
                 t = download_file(session, att["url"], notice_dir, att["filename"], semaphore)
                 tasks.append(t)
 
             results = await asyncio.gather(*tasks, return_exceptions=True)
+
             for i, res in enumerate(results):
                 if res is True:
                     to_download[i]["downloaded"] = True
                 elif isinstance(res, Exception):
-                    logger.error(f"Błąd gather w załącznikach {notice_id}: {res}")
+                    logger.error(f"Błąd gather załącznika {notice_id}: {res}")
 
     requirements = notice_doc.find("div", {"id": "requirements"})
     desc = requirements.get_text(strip=True) if requirements else "brak"
