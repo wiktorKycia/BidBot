@@ -2,7 +2,7 @@ import asyncio
 import hashlib
 import json
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urljoin, urlparse
 
@@ -43,9 +43,9 @@ def get_last_run_date() -> datetime:
             return datetime.fromisoformat(date_str)
         except ValueError:
             logger.warning(
-                "Niepoprawny format daty w last_run.txt. Przyjęto datę domyślną."
+                "Niepoprawny format daty w last_run.txt. Przyjęto datę domyślną.",
             )
-    return datetime(2000, 1, 1, tzinfo=timezone.utc)
+    return datetime(2000, 1, 1, tzinfo=UTC)
 
 
 def set_last_run_date(dt: datetime):
@@ -63,14 +63,9 @@ async def save_json(filepath: Path, data: dict):
 
 
 def extract_direct_url(url: str) -> str:
-    """
-    Ekstraktuje bezpośredni URL, jeśli link prowadzi do podglądu (np. Google Drive Viewer).
-    """
+    """Ekstraktuje bezpośredni URL, jeśli link prowadzi do podglądu (np. Google Drive Viewer)."""
     parsed = urlparse(url)
-    if (
-        "google.com/viewer" in parsed.netloc + parsed.path
-        or "drive.google.com/viewer" in parsed.netloc + parsed.path
-    ):
+    if "google.com/viewer" in parsed.netloc + parsed.path or "drive.google.com/viewer" in parsed.netloc + parsed.path:
         query_params = parse_qs(parsed.query)
         if "url" in query_params:
             return unquote(query_params["url"][0])
@@ -112,30 +107,29 @@ async def download_file(
         metadata["downloaded"] = True
         return metadata
 
-    async with semaphore:
-        async with session.get(url) as response:
-            response.raise_for_status()
-            size = 0
-            async with aiofiles.open(temp_filepath, mode="wb") as f:
-                async for chunk in response.content.iter_chunked(64 * 1024):
-                    if chunk:
-                        await f.write(chunk)
-                        size += len(chunk)
+    async with semaphore, session.get(url) as response:
+        response.raise_for_status()
+        size = 0
+        async with aiofiles.open(temp_filepath, mode="wb") as f:
+            async for chunk in response.content.iter_chunked(64 * 1024):
+                if chunk:
+                    await f.write(chunk)
+                    size += len(chunk)
 
-            temp_filepath.rename(filepath)
+        temp_filepath.rename(filepath)
 
-            metadata["size_bytes"] = size
-            metadata["downloaded"] = True
-            logger.info(f"Pobrano plik: {filename} ({size} bytes)")
+        metadata["size_bytes"] = size
+        metadata["downloaded"] = True
+        logger.info(f"Pobrano plik: {filename} ({size} bytes)")
 
-            return metadata
+        return metadata
 
 
 async def check_page_exists(session: aiohttp.ClientSession, page: int) -> bool:
     limit = 50
     offset = (page - 1) * limit
-    deadline_from = (datetime.now(timezone.utc) - timedelta(days=1)).strftime(
-        "%Y-%m-%dT%H:%M:%S.000Z"
+    deadline_from = (datetime.now(UTC) - timedelta(days=1)).strftime(
+        "%Y-%m-%dT%H:%M:%S.000Z",
     )
 
     payload = {
@@ -162,7 +156,9 @@ async def check_page_exists(session: aiohttp.ClientSession, page: int) -> bool:
 
     try:
         async with session.post(
-            API_LIST_URL, json=payload, headers=headers
+            API_LIST_URL,
+            json=payload,
+            headers=headers,
         ) as response:
             if response.status == 200:
                 api_data = await response.json()
@@ -195,7 +191,9 @@ async def get_total_pages(session: aiohttp.ClientSession) -> int:
 
 
 async def process_single_notice(
-    session: aiohttp.ClientSession, item: dict, semaphore: asyncio.Semaphore
+    session: aiohttp.ClientSession,
+    item: dict,
+    semaphore: asyncio.Semaphore,
 ) -> dict:
     notice_id = str(item.get("id"))
 
@@ -209,20 +207,14 @@ async def process_single_notice(
     for a_tag in doc.find_all("a", href=True):
         href = str(a_tag["href"])
         href_lower = href.lower()
-        if any(
-            ext in href_lower
-            for ext in [".pdf", ".zip", ".doc", ".docx", "download", "file", "viewer"]
-        ):
+        if any(ext in href_lower for ext in [".pdf", ".zip", ".doc", ".docx", "download", "file", "viewer"]):
             attachment_links.add(href)
 
     tender_attachments_dir = ATTACHMENTS_DIR / notice_id
     if attachment_links:
         tender_attachments_dir.mkdir(parents=True, exist_ok=True)
 
-    download_tasks = [
-        download_file(session, link, tender_attachments_dir, semaphore)
-        for link in attachment_links
-    ]
+    download_tasks = [download_file(session, link, tender_attachments_dir, semaphore) for link in attachment_links]
 
     valid_attachments_metadata = []
     if download_tasks:
@@ -230,7 +222,7 @@ async def process_single_notice(
         for res in results:
             if isinstance(res, Exception):
                 logger.error(
-                    f"Wyjątek w tasku pobierania dla notice {notice_id}: {res!r}"
+                    f"Wyjątek w tasku pobierania dla notice {notice_id}: {res!r}",
                 )
             else:
                 valid_attachments_metadata.append(res)
@@ -255,8 +247,8 @@ async def process_list_page(
 
     limit = 50
     offset = (page - 1) * limit
-    deadline_from = (datetime.now(timezone.utc) - timedelta(days=1)).strftime(
-        "%Y-%m-%dT%H:%M:%S.000Z"
+    deadline_from = (datetime.now(UTC) - timedelta(days=1)).strftime(
+        "%Y-%m-%dT%H:%M:%S.000Z",
     )
 
     payload = {
@@ -285,11 +277,13 @@ async def process_list_page(
     async with semaphore:
         try:
             async with session.post(
-                API_LIST_URL, json=payload, headers=headers
+                API_LIST_URL,
+                json=payload,
+                headers=headers,
             ) as response:
                 if response.status != 200:
                     logger.error(
-                        f"Błąd HTTP {response.status} podczas pobierania strony {page}"
+                        f"Błąd HTTP {response.status} podczas pobierania strony {page}",
                     )
                     return 0
                 api_data = await response.json()
@@ -312,7 +306,7 @@ async def process_list_page(
                 pub_date = datetime.fromisoformat(pub_date_str)
                 if pub_date <= last_run_date:
                     logger.info(
-                        f"Trafiono na starsze ogłoszenie ({pub_date.strftime('%Y-%m-%d %H:%M')}). Pomijam resztę."
+                        f"Trafiono na starsze ogłoszenie ({pub_date.strftime('%Y-%m-%d %H:%M')}). Pomijam resztę.",
                     )
                     break
             except (ValueError, TypeError) as e:
@@ -337,9 +331,9 @@ async def main():
     setup_directories()
 
     last_run_date = get_last_run_date()
-    current_run_date = datetime.now(timezone.utc)
+    current_run_date = datetime.now(UTC)
     logger.info(
-        f"Ostatnie uruchomienie: {last_run_date.strftime('%Y-%m-%d %H:%M:%S UTC')}"
+        f"Ostatnie uruchomienie: {last_run_date.strftime('%Y-%m-%d %H:%M:%S UTC')}",
     )
 
     resolver = AsyncResolver(nameservers=["1.1.1.1", "8.8.8.8"])
@@ -352,15 +346,13 @@ async def main():
 
     try:
         async with aiohttp.ClientSession(
-            connector=connector, timeout=timeout
+            connector=connector,
+            timeout=timeout,
         ) as session:
             total_pages = await get_total_pages(session)
 
             logger.info(f"Rozpoczęcie pobierania {total_pages} stron...")
-            tasks = [
-                process_list_page(session, page, last_run_date, semaphore)
-                for page in range(1, total_pages + 1)
-            ]
+            tasks = [process_list_page(session, page, last_run_date, semaphore) for page in range(1, total_pages + 1)]
 
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -373,7 +365,7 @@ async def main():
     finally:
         set_last_run_date(current_run_date)
         logger.info(
-            f"Zakończono pracę programu. Łącznie pobrano {total_downloaded} nowych przetargów."
+            f"Zakończono pracę programu. Łącznie pobrano {total_downloaded} nowych przetargów.",
         )
 
 

@@ -1,6 +1,6 @@
 import asyncio
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import aiofiles
@@ -31,8 +31,7 @@ def is_downloaded(object_id: str) -> bool:
 
 
 def is_tender_open(raw_data: dict) -> bool:
-    """
-    Sprawdza, czy termin składania ofert jest w przyszłości.
+    """Sprawdza, czy termin składania ofert jest w przyszłości.
     Zwraca True, jeśli przetarg jest otwarty.
     """
     deadline_str = raw_data.get("submittingOffersDate")
@@ -41,8 +40,8 @@ def is_tender_open(raw_data: dict) -> bool:
         return False
 
     try:
-        deadline = datetime.fromisoformat(deadline_str.replace("Z", "+00:00"))
-        now = datetime.now(timezone.utc)
+        deadline = datetime.fromisoformat(deadline_str)
+        now = datetime.now(UTC)
 
         return deadline > now
     except ValueError as e:
@@ -51,8 +50,7 @@ def is_tender_open(raw_data: dict) -> bool:
 
 
 def parse_notice(raw_data: dict) -> dict:
-    """
-    Normalizacja danych do ujednoliconego formatu dla bota.
+    """Normalizacja danych do ujednoliconego formatu dla bota.
     Wyczyszczenie HTML z treści ogłoszenia oraz ekstrakcja linków do dokumentacji.
     """
     html_body = raw_data.get("htmlBody", "")
@@ -68,9 +66,8 @@ def parse_notice(raw_data: dict) -> dict:
             href = a_tag["href"]
             text = a_tag.get_text(strip=True)
 
-            if href.startswith("http"):
-                if not any(att["url"] == href for att in attachments):
-                    attachments.append({"text": text if text else "Link", "url": href})
+            if href.startswith("http") and not any(att["url"] == href for att in attachments):
+                attachments.append({"text": text or "Link", "url": href})
 
     object_id = raw_data.get("objectId")
 
@@ -95,10 +92,11 @@ async def save_json(filepath: Path, data: dict):
 
 
 async def fetch_page(
-    session: aiohttp.ClientSession, notice_type: str, search_after: str = None
+    session: aiohttp.ClientSession,
+    notice_type: str,
+    search_after: str = None,
 ) -> list:
     """Pobiera pojedynczą stronę wyników dla danego typu ogłoszenia."""
-
     start_date = (datetime.now() - timedelta(days=45)).strftime("%Y-%m-%dT%H:%M:%S")
     end_date = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
 
@@ -139,7 +137,7 @@ async def process_notice_type(session: aiohttp.ClientSession, notice_type: str):
             break
 
         print(
-            f"[{notice_type}] Przeszukiwanie strony {page} (Pobranych z API: {len(data)})"
+            f"[{notice_type}] Przeszukiwanie strony {page} (Pobranych z API: {len(data)})",
         )
 
         for item in data:
@@ -168,7 +166,7 @@ async def process_notice_type(session: aiohttp.ClientSession, notice_type: str):
             break
 
     print(
-        f"Zakończono typ {notice_type}. Pobranych i zapisanych otwartych przetargów: {total_downloaded}"
+        f"Zakończono typ {notice_type}. Pobranych i zapisanych otwartych przetargów: {total_downloaded}",
     )
 
 
