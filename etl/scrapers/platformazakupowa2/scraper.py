@@ -1,56 +1,47 @@
 import json
 import re
-import shutil
+import hashlib
+import logging
+import asyncio
 from pathlib import Path
 from datetime import datetime, timezone
+from urllib.parse import urljoin
 
 import aiofiles
 import aiohttp
-import asyncio
+import backoff
 from aiohttp import TCPConnector
 from aiohttp.resolver import AsyncResolver
 from bs4 import BeautifulSoup
 
+from etl.settings import (
+    setup_logging,
+    RAW_DIR,
+    PARSED_DIR,
+    ATTACHMENTS_DIR,
+)
+
+setup_logging()
+logger = logging.getLogger(__name__)
+
 BASE_URL = "https://platformazakupowa.pl"
 ALL_RESOURCES_URL = "https://platformazakupowa.pl/all"
-
-BASE_DIR = Path(__file__).resolve().parent
-DATA_DIR = BASE_DIR / "data"
-RAW_DIR = DATA_DIR / "raw_html"
-PARSED_DIR = DATA_DIR / "parsed"
-ATTACHMENTS_DIR = DATA_DIR / "attachments"
-
-SEMAPHORE = asyncio.Semaphore(15)
-
-CLEAN_DOWNLOAD = True
-
-
-def setup_directories():
-    for directory in [RAW_DIR, PARSED_DIR, ATTACHMENTS_DIR]:
-        if directory.exists() and CLEAN_DOWNLOAD:
-            shutil.rmtree(directory)
-        directory.mkdir(parents=True, exist_ok=True)
 
 
 def is_downloaded(notice_id: str) -> bool:
     return (RAW_DIR / f"{notice_id}.html").exists()
 
 
-def is_tender_open(deadline_str: str) -> bool:
-    if not deadline_str:
-        return False
-    try:
-        deadline = datetime.fromisoformat(deadline_str.replace('Z', '+00:00'))
-        now = datetime.now(timezone.utc)
-        return deadline > now
-    except ValueError as e:
-        print(f"Błąd parsowania daty {deadline_str}: {e}")
-        return False
+def is_tender_open(deadline_dt: datetime) -> bool:
+    if deadline_dt:
+        return deadline_dt > datetime.now(timezone.utc)
+    return False
 
 
 async def save_json(filepath: Path, data: dict):
     async with aiofiles.open(filepath, mode="w", encoding="utf-8") as f:
-        await f.write(json.dumps(data, ensure_ascii=False, indent=2))
+        json_data = json.dumps(data, ensure_ascii=False, indent=2)
+        await f.write(json_data)
 
 
 async def save_html(filepath: Path, data: str):
@@ -61,257 +52,234 @@ async def save_html(filepath: Path, data: str):
 def sanitize_filename(filename: str, fallback: str = "attachment") -> str:
     if not filename:
         return fallback
-    basename = Path(filename.replace("\\", "/")).name.strip()
+
+    clean_path = filename.replace("\\", "/")
+    basename = Path(clean_path).name.strip()
     sanitized = re.sub(r'[<>:"/\\|?*\x00-\x1f\x7f-\x9f]', "_", basename).strip(" .")
-    return sanitized or fallback
+
+    if not sanitized:
+        return fallback
+    return sanitized
 
 
-async def download_file(session: aiohttp.ClientSession, url: str, output_dir: Path, filename: str):
-    # if not filename:
-    #     filename = Path(url).name
+@backoff.on_exception(backoff.expo, (aiohttp.ClientError, asyncio.TimeoutError), max_tries=3)
+async def download_file(session: aiohttp.ClientSession, url: str, output_dir: Path, filename: str, semaphore: asyncio.Semaphore) -> bool:
     filepath = output_dir / filename
-    async with SEMAPHORE:
-        async with session.get(url) as response:
-            if response.status == 200:
-                async with aiofiles.open(filepath, 'wb') as f:
+    if filepath.exists():
+        return True
+
+    url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
+    temp_filepath = filepath.with_suffix(f'.{url_hash}.tmp')
+
+    async with semaphore:
+        try:
+            async with session.get(url, timeout=60) as response:
+                response.raise_for_status()
+
+                size = 0
+                async with aiofiles.open(temp_filepath, 'wb') as f:
                     async for chunk in response.content.iter_chunked(64 * 1024):
-                        if chunk:
-                            await f.write(chunk)
-                # print(f"Downloaded {filename}")
-            else:
-                print(f"Failed to download {filename}: {response.status}")
+                        await f.write(chunk)
+                        size += len(chunk)
 
+                cl = response.headers.get('Content-Length')
+                if cl and int(cl) != size:
+                    raise Exception(f"Niezgodny rozmiar: {size}/{cl}")
 
-async def fetch_page(session: aiohttp.ClientSession, page_number: int) -> str:
-    params = {"page": page_number, "limit": 100}
-    async with SEMAPHORE:
-        async with session.get(ALL_RESOURCES_URL, params=params, headers={
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        }) as response:
-            if response.status != 200:
-                print(f"Blad HTTP {response.status} dla strony {page_number}")
-                return ""
-            try:
-                return await response.text()
-            except Exception as e:
-                print(f"Blad parsowania tekstu strony {page_number}: {e}")
-                return ""
-
-
-async def fetch_notice_details(session: aiohttp.ClientSession, notice_url: str):
-    try:
-        async with SEMAPHORE:
-            async with session.get(notice_url, headers={"Accept-Language": "pl,pl-PL;q=0.9"}) as response:
-                if response.status != 200:
-                    print(f"Błąd HTTP {response.status} dla przetargu {notice_url.split('/')[-1]}")
-                    return ""
+                temp_filepath.replace(filepath)
+                return True
+        except Exception as e:
+            logger.error(f"Błąd pobierania {filename}: {e}")
+            if temp_filepath.exists():
                 try:
-                    return await response.text()
-                except Exception as e:
-                    print(f"Błąd:  {notice_url.split('/')[-1]}: {e}")
+                    temp_filepath.unlink()
+                except Exception:
+                    pass
+            return False
+
+
+async def fetch_page(session: aiohttp.ClientSession, page_number: int, semaphore: asyncio.Semaphore) -> str:
+    params = {"page": page_number, "limit": 100}
+    async with semaphore:
+        try:
+            async with session.get(ALL_RESOURCES_URL, params=params) as response:
+                if response.status != 200:
+                    logger.error(f"Błąd HTTP {response.status} dla str. {page_number}")
                     return ""
-    except (asyncio.TimeoutError, aiohttp.ClientError) as e:
-        print(f"Błąd pobierania szczegółów {notice_url.split('/')[-1]}: {e}")
-        return ""
+                return await response.text()
+        except Exception as e:
+            logger.error(f"Błąd fetch_page {page_number}: {e}")
+            return ""
 
 
-async def process_notice_details(session: aiohttp.ClientSession, notice_url: str, notice_id: str) -> dict:
-    data = await fetch_notice_details(session, notice_url)
+async def fetch_notice_details(session: aiohttp.ClientSession, notice_url: str, semaphore: asyncio.Semaphore):
+    async with semaphore:
+        try:
+            async with session.get(notice_url, headers={"Accept-Language": "pl"}) as response:
+                if response.status == 200:
+                    return await response.text()
+                return ""
+        except Exception:
+            return ""
+
+
+async def process_notice_details(session: aiohttp.ClientSession, notice_url: str, notice_id: str, semaphore: asyncio.Semaphore) -> dict:
+    data = await fetch_notice_details(session, notice_url, semaphore)
     if not data:
-        return {
-            "client_name": None,
-            "publication_date": None,
-            "description": None,
-            "raw_html": None,
-            "attachments": []
-        }
+        return {}
 
     notice_doc = BeautifulSoup(data, "lxml")
     organisation = "Nie podano nazwy"
-    order_type = None
-    publication_date = None
+    publication_date_dt = None
 
-    li_list = notice_doc.find_all("li", class_="proceeding-info-list-item")
-    for li in li_list:
+    li_items = notice_doc.find_all("li", class_="proceeding-info-list-item")
+    for li in li_items:
         div = li.find("div")
         if not div:
             continue
 
         label_text = div.text.strip()
-
         if "Organizacja" in label_text:
             texts = list(li.stripped_strings)
             if len(texts) > 1:
                 organisation = " ".join(texts[1:])
 
-        elif "Opublikowano" in label_text or "Zamieszczenia" in label_text:
+        elif any(x in label_text for x in ["Opublikowano", "Zamieszczenia"]):
             texts = list(li.stripped_strings)
             if len(texts) > 1:
-                raw_date = " ".join(texts[1:]).strip()
                 try:
+                    raw_date = " ".join(texts[1:]).strip()
                     clean_date_str = " ".join(raw_date.split()[:2])
-                    publication_date = datetime.strptime(clean_date_str, '%Y-%m-%d %H:%M:%S').strftime('%Y-%m-%dT%H:%M:%SZ')
-                except Exception as e:
-                    print(f"Blad parsowania daty publikacji: {raw_date}")
-                    publication_date = raw_date
-
-        elif "Rodzaj" in label_text:
-            texts = list(li.stripped_strings)
-            if len(texts) > 1:
-                order_type = " ".join(texts[1:]).strip()
-
-    requirements = notice_doc.find("div", {"id": "requirements"})
-    description = requirements.text.strip() if requirements and requirements.text.strip() else "bez opisu"
+                    parsed_dt = datetime.strptime(clean_date_str, '%Y-%m-%d %H:%M:%S')
+                    publication_date_dt = parsed_dt.replace(tzinfo=timezone.utc)
+                except Exception:
+                    pass
 
     attachments_list = []
-    used_filenames = set()
-    filename_counters = {}
-    attachments_table = notice_doc.find("table", {"id": "allAttachmentsTable"})
-    if attachments_table:
-        attachments_tbody = attachments_table.find("tbody")
-        if attachments_tbody:
-            table_rows = attachments_table.tbody.find_all("tr")
-            for row in table_rows:
-                a_tag = row.find("a", class_="proceeding-file-download")
-                if a_tag and 'href' in a_tag.attrs:
-                    # filename
-                    td_with_filename = row.find("td", class_="text-left")
-                    if not td_with_filename:
-                        continue
-                    filename = sanitize_filename(td_with_filename.text.strip())
-                    extension = Path(filename).suffix.lower().lstrip(".")
-                    if extension in ['zip', '7z']:
-                        filename = None
-                    else:
-                        if filename:
-                            filename_path = Path(filename)
-                            stem = filename_path.stem
-                            suffix = filename_path.suffix
-                            counter = filename_counters.get(filename, 0)
-                            unique_filename = filename if counter == 0 else f"{stem}_{counter}{suffix}"
-                            while unique_filename in used_filenames:
-                                counter += 1
-                                unique_filename = f"{stem}_{counter}{suffix}"
-                            filename_counters[filename] = counter + 1
-                            filename = unique_filename
-                            used_filenames.add(filename)
+    table = notice_doc.find("table", {"id": "allAttachmentsTable"})
+    if table and table.tbody:
+        for row in table.tbody.find_all("tr"):
+            a_tag = row.find("a", class_="proceeding-file-download")
+            td_filename = row.find("td", class_="text-left")
 
-                    # file url
-                    href = a_tag['href']
-                    if href.startswith(".."):
-                        href = href[2:]
+            if a_tag and td_filename:
+                filename = sanitize_filename(td_filename.text.strip())
+                ext = Path(filename).suffix.lower().lstrip(".")
 
-                    attachments_list.append({
-                        "url": f"https:{href}" if not href.startswith("http") else href,
-                        "filename": filename
-                    })
+                if ext in ['zip', '7z']:
+                    filename = None
 
-    tasks_to_download = []
-    # print(attachments_list)
-    for attachment in attachments_list:
-        if not attachment.get('filename'):
-            continue
-        directory = ATTACHMENTS_DIR / notice_id
-        directory.mkdir(parents=True, exist_ok=True)
-        tasks_to_download.append(download_file(session, attachment.get('url'), directory, attachment.get('filename')))
+                attachments_list.append({
+                    "url": urljoin(BASE_URL, a_tag['href']),
+                    "filename": filename,
+                    "local_path": str(Path(notice_id) / filename) if filename else None,
+                    "downloaded": False
+                })
 
-    if tasks_to_download:
-        await asyncio.gather(*tasks_to_download, return_exceptions=True)
+    if attachments_list:
+        notice_dir = ATTACHMENTS_DIR / notice_id
+        to_download = [a for a in attachments_list if a['filename']]
+
+        if to_download:
+            notice_dir.mkdir(parents=True, exist_ok=True)
+            tasks = []
+            for att in to_download:
+                t = download_file(session, att['url'], notice_dir, att['filename'], semaphore)
+                tasks.append(t)
+
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            for i, res in enumerate(results):
+                if res is True:
+                    to_download[i]['downloaded'] = True
+                elif isinstance(res, Exception):
+                    logger.error(f"Błąd gather w załącznikach {notice_id}: {res}")
+
+    requirements = notice_doc.find("div", {"id": "requirements"})
+    if requirements:
+        desc = requirements.get_text(strip=True)
+    else:
+        desc = "brak"
 
     return {
         "client_name": organisation,
-        "order_type": order_type,
-        "publication_date": publication_date,
-        "description": description,
+        "publication_date_dt": publication_date_dt,
+        "description": desc,
         "raw_html": notice_doc.prettify(),
         "attachments": attachments_list
     }
 
 
-async def process_page(session: aiohttp.ClientSession, page_number: int) -> int:
-    print(f"Rozpoczęto stronę {page_number}...")
-    total_new_downloads = 0
-    data = await fetch_page(session, page_number)
-
+async def process_page(session: aiohttp.ClientSession, page_number: int, semaphore: asyncio.Semaphore) -> int:
+    logger.info(f"Strona {page_number}...")
+    data = await fetch_page(session, page_number, semaphore)
     if not data:
         return 0
 
     doc = BeautifulSoup(data, "lxml")
     notices = doc.find_all("div", class_="product-info")
-    tasks_to_download = []
 
-    async def process_single_notice(notice):
-        nonlocal total_new_downloads
-        a_tag = notice.find("a")
-        if not a_tag or 'href' not in a_tag.attrs:
-            return
+    async def process_single_notice(notice_div) -> bool:
+        a_tag = notice_div.find("a")
+        if not a_tag:
+            return False
 
-        notice_id = a_tag['href'].split('/')[-1]
-        notice_name = a_tag.text.strip()
-        notice_url = f"{BASE_URL}{a_tag['href']}"
+        notice_url = urljoin(BASE_URL, a_tag['href'])
+        notice_id = notice_url.split('/')[-1]
 
-        span = notice.find("span", class_="auction-time")
+        if is_downloaded(notice_id):
+            return False
+
+        span = notice_div.find("span", class_="auction-time")
         if not span or not span.find('b') or 'title' not in span.b.attrs:
-            return
-
-        submitting_offers_title = span.b['title']
-        submitting_offers_date_str = " ".join(submitting_offers_title.split()[:2]).strip()
+            return False
 
         try:
-            submitting_offers_date = datetime.strptime(
-                submitting_offers_date_str,
-                '%d-%m-%Y %H:%M:%S'
-            ).strftime('%Y-%m-%dT%H:%M:%SZ')
-        except (TypeError, ValueError):
-            print(
-                f"Pominięto ogłoszenie {notice_url}: "
-                f"nieprawidłowy format daty w auction-time title: {submitting_offers_title!r}"
-            )
-            return
+            title_text = span.b['title']
+            deadline_str = " ".join(title_text.split()[:2]).strip()
+            deadline_dt = datetime.strptime(deadline_str, '%d-%m-%Y %H:%M:%S').replace(tzinfo=timezone.utc)
+        except Exception:
+            return False
 
-        if not is_tender_open(submitting_offers_date):
-            return
-        if not notice_id or is_downloaded(notice_id):
-            return
+        if not is_tender_open(deadline_dt):
+            return False
 
-        details = await process_notice_details(session, notice_url, notice_id)
+        details = await process_notice_details(session, notice_url, notice_id, semaphore)
+        if not details:
+            return False
+
+        pub_date = None
+        if details.get("publication_date_dt"):
+            pub_date = details["publication_date_dt"].isoformat()
 
         parsed_data = {
             "id": notice_id,
-            "source": "platformazakupowa.pl",
             "url": notice_url,
-            "title": notice_name,
-            "publication_date": details.get("publication_date"),
-            "submitting_offers_date": submitting_offers_date,
+            "title": a_tag.text.strip(),
+            "publication_date": pub_date,
+            "submitting_offers_date": deadline_dt.isoformat(),
             "client_name": details.get("client_name"),
             "description": details.get("description"),
-            "attachments": details.get("attachments"),
-            "order_type": details.get("order_type")
+            "attachments": details.get("attachments")
         }
 
-        if details.get('raw_html'):
-            raw_filepath = RAW_DIR / f"{notice_id}.html"
-            await save_html(raw_filepath, details['raw_html'])
+        await save_html(RAW_DIR / f"{notice_id}.html", details['raw_html'])
+        await save_json(PARSED_DIR / f"{notice_id}.json", parsed_data)
+        return True
 
-            parsed_filepath = PARSED_DIR / f"{notice_id}.json"
-            await save_json(parsed_filepath, parsed_data)
+    tasks = [process_single_notice(n) for n in notices]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
 
-            total_new_downloads += 1
+    for r in results:
+        if isinstance(r, Exception):
+            logger.error(f"Wyjątek na stronie {page_number}: {r}")
 
-    for notice in notices:
-        tasks_to_download.append(process_single_notice(notice))
-
-    if tasks_to_download:
-        await asyncio.gather(*tasks_to_download, return_exceptions=True)
-
-    print(f"Zakończono stronę {page_number}. Zapisano nowych przetargów: {total_new_downloads}")
-    return total_new_downloads
+    return sum(1 for r in results if r is True)
 
 
-async def get_pages_number(session: aiohttp.ClientSession):
-    data = await fetch_page(session, 1)
+async def get_pages_number(session: aiohttp.ClientSession, semaphore: asyncio.Semaphore):
+    data = await fetch_page(session, 1, semaphore)
     if not data:
-        raise Exception("Strona platformazakupowa.pl niedostępna")
+        return 1
 
     doc = BeautifulSoup(data, "lxml")
     ul = doc.find("ul", class_="pagination")
@@ -320,34 +288,30 @@ async def get_pages_number(session: aiohttp.ClientSession):
 
     li_list = ul.find_all("li")
     try:
-        total_pages = int(li_list[-2].a.text)
-        return total_pages
-    except (IndexError, ValueError, AttributeError):
+        last_page_text = li_list[-2].a.text
+        return int(last_page_text)
+    except Exception:
         return 1
 
 
 async def main():
-    print("Inicjalizacja scrapera HTML platformazakupowa.pl...")
-    setup_directories()
+    semaphore = asyncio.Semaphore(3)
 
     resolver = AsyncResolver(nameservers=["1.1.1.1", "8.8.8.8"])
-    connector = TCPConnector(resolver=resolver, limit=30)
-    timeout = aiohttp.ClientTimeout(total=30)
+    connector = TCPConnector(resolver=resolver)
 
-    async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
-        total_pages = await get_pages_number(session)
-        print(f"Znaleziono stron: {total_pages}")
+    async with aiohttp.ClientSession(connector=connector) as session:
+        total_pages = await get_pages_number(session, semaphore)
+        logger.info(f"Znaleziono stron: {total_pages}")
 
-        total_all_new = 0
-        for page_number in range(1, total_pages + 1):
-            new_notices_count = await process_page(session, page_number)
-            total_all_new += new_notices_count
-
-            if new_notices_count == 0:
-                print(f"Przerwano na stronie {page_number} - brak nowych danych. Uznano za zaktualizowane.")
+        total_new = 0
+        for p in range(1, total_pages + 1):
+            count = await process_page(session, p, semaphore)
+            total_new += count
+            if count == 0 and p > 1:
                 break
 
-    print(f"Zakonczono. Łącznie nowych przetargow: {total_all_new}")
+    logger.info(f"Koniec. Pobrano nowych: {total_new}")
 
 
 if __name__ == "__main__":

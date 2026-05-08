@@ -7,3 +7,4 @@ etl/data
 
 /etl/scrapers/platformazakupowa/data
 data
+/logs
