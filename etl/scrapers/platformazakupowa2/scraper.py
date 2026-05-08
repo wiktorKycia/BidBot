@@ -70,7 +70,7 @@ async def download_file(session: aiohttp.ClientSession, url: str, output_dir: Pa
         return True
 
     url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
-    temp_filepath = filepath.with_suffix(f'.{url_hash}.tmp')
+    temp_filepath = filepath.with_suffix(f".{url_hash}.tmp")
 
     async with semaphore:
         try:
@@ -78,12 +78,12 @@ async def download_file(session: aiohttp.ClientSession, url: str, output_dir: Pa
                 response.raise_for_status()
 
                 size = 0
-                async with aiofiles.open(temp_filepath, 'wb') as f:
+                async with aiofiles.open(temp_filepath, "wb") as f:
                     async for chunk in response.content.iter_chunked(64 * 1024):
                         await f.write(chunk)
                         size += len(chunk)
 
-                cl = response.headers.get('Content-Length')
+                cl = response.headers.get("Content-Length")
                 if cl and int(cl) != size:
                     raise Exception(f"Niezgodny rozmiar: {size}/{cl}")
 
@@ -149,7 +149,7 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
                 try:
                     raw_date = " ".join(texts[1:]).strip()
                     clean_date_str = " ".join(raw_date.split()[:2])
-                    parsed_dt = datetime.strptime(clean_date_str, '%Y-%m-%d %H:%M:%S')
+                    parsed_dt = datetime.strptime(clean_date_str, "%Y-%m-%d %H:%M:%S")
                     publication_date_dt = parsed_dt.replace(tzinfo=UTC)
                 except Exception:
                     pass
@@ -165,31 +165,33 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
                 filename = sanitize_filename(td_filename.text.strip())
                 ext = Path(filename).suffix.lower().lstrip(".")
 
-                if ext in ['zip', '7z']:
+                if ext in ["zip", "7z"]:
                     filename = None
 
-                attachments_list.append({
-                    "url": urljoin(BASE_URL, a_tag['href']),
-                    "filename": filename,
-                    "local_path": str(Path(notice_id) / filename) if filename else None,
-                    "downloaded": False
-                })
+                attachments_list.append(
+                    {
+                        "url": urljoin(BASE_URL, a_tag["href"]),
+                        "filename": filename,
+                        "local_path": str(Path(notice_id) / filename) if filename else None,
+                        "downloaded": False,
+                    }
+                )
 
     if attachments_list:
         notice_dir = ATTACHMENTS_DIR / notice_id
-        to_download = [a for a in attachments_list if a['filename']]
+        to_download = [a for a in attachments_list if a["filename"]]
 
         if to_download:
             notice_dir.mkdir(parents=True, exist_ok=True)
             tasks = []
             for att in to_download:
-                t = download_file(session, att['url'], notice_dir, att['filename'], semaphore)
+                t = download_file(session, att["url"], notice_dir, att["filename"], semaphore)
                 tasks.append(t)
 
             results = await asyncio.gather(*tasks, return_exceptions=True)
             for i, res in enumerate(results):
                 if res is True:
-                    to_download[i]['downloaded'] = True
+                    to_download[i]["downloaded"] = True
                 elif isinstance(res, Exception):
                     logger.error(f"Błąd gather w załącznikach {notice_id}: {res}")
 
@@ -201,7 +203,7 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
         "publication_date_dt": publication_date_dt,
         "description": desc,
         "raw_html": notice_doc.prettify(),
-        "attachments": attachments_list
+        "attachments": attachments_list,
     }
 
 
@@ -219,20 +221,20 @@ async def process_page(session: aiohttp.ClientSession, page_number: int, semapho
         if not a_tag:
             return False
 
-        notice_url = urljoin(BASE_URL, a_tag['href'])
-        notice_id = notice_url.split('/')[-1]
+        notice_url = urljoin(BASE_URL, a_tag["href"])
+        notice_id = notice_url.split("/")[-1]
 
         if is_downloaded(notice_id):
             return False
 
         span = notice_div.find("span", class_="auction-time")
-        if not span or not span.find('b') or 'title' not in span.b.attrs:
+        if not span or not span.find("b") or "title" not in span.b.attrs:
             return False
 
         try:
-            title_text = span.b['title']
+            title_text = span.b["title"]
             deadline_str = " ".join(title_text.split()[:2]).strip()
-            deadline_dt = datetime.strptime(deadline_str, '%d-%m-%Y %H:%M:%S').replace(tzinfo=UTC)
+            deadline_dt = datetime.strptime(deadline_str, "%d-%m-%Y %H:%M:%S").replace(tzinfo=UTC)
         except Exception:
             return False
 
@@ -255,10 +257,10 @@ async def process_page(session: aiohttp.ClientSession, page_number: int, semapho
             "submitting_offers_date": deadline_dt.isoformat(),
             "client_name": details.get("client_name"),
             "description": details.get("description"),
-            "attachments": details.get("attachments")
+            "attachments": details.get("attachments"),
         }
 
-        await save_html(RAW_DIR / f"{notice_id}.html", details['raw_html'])
+        await save_html(RAW_DIR / f"{notice_id}.html", details["raw_html"])
         await save_json(PARSED_DIR / f"{notice_id}.json", parsed_data)
         return True
 

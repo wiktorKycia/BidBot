@@ -30,7 +30,7 @@ LOGGING_CONFIG = {
         },
         "file": {
             "class": "logging.FileHandler",
-            "filename": LOG_DIR / 'scraper.log',
+            "filename": LOG_DIR / "scraper.log",
             "formatter": "standard",
             "level": "DEBUG",
             "encoding": "utf-8",
@@ -42,9 +42,7 @@ LOGGING_CONFIG = {
             "level": "DEBUG",
             "propagate": True,
         },
-        "aiohttp": {
-            "level": "WARNING"
-        },
+        "aiohttp": {"level": "WARNING"},
     },
 }
 
