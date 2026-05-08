@@ -37,3 +37,6 @@ extend-select = [
     "N",
     "SIM",
 ]
+ignore = [
+    "COM812"
+]
