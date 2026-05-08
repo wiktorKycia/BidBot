@@ -1,11 +1,11 @@
-import contextlib
-import json
-import re
-import hashlib
-import logging
 import asyncio
+import contextlib
+import hashlib
+import json
+import logging
+import re
+from datetime import UTC, datetime
 from pathlib import Path
-from datetime import datetime, UTC
 from urllib.parse import urljoin
 
 import aiofiles
@@ -15,12 +15,7 @@ from aiohttp import TCPConnector
 from aiohttp.resolver import AsyncResolver
 from bs4 import BeautifulSoup
 
-from etl.settings import (
-    setup_logging,
-    RAW_DIR,
-    PARSED_DIR,
-    ATTACHMENTS_DIR,
-)
+from etl.settings import ATTACHMENTS_DIR, PARSED_DIR, RAW_DIR, setup_logging
 
 setup_logging()
 logger = logging.getLogger(__name__)
