@@ -14,3 +14,29 @@ dependencies = [
     "lxml>=6.1.0",
     "requests>=2.33.1",
 ]
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.6.0",
+]
+
+[tool.ruff]
+line-length = 150
+target-version = "py314"
+
+[tool.ruff.lint]
+extend-select = [
+    "W",
+    "I",
+    "B",
+    "UP",
+    "FURB",
+    "E",
+    "COM",
+    "C4",
+    "N",
+    "SIM",
+]
+ignore = [
+    "COM812"
+]
