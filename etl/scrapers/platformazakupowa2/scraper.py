@@ -25,8 +25,9 @@ BASE_URL = "https://platformazakupowa.pl"
 ALL_RESOURCES_URL = "https://platformazakupowa.pl/all"
 
 
-class DownloadIntegrityException(Exception):
+class DownloadIntegrityError(Exception):
     """Błąd rzucany, gdy rozmiar pliku nie zgadza się z nagłówkiem Content-Length."""
+
     pass
 
 
@@ -64,11 +65,7 @@ def sanitize_filename(filename: str, fallback: str = "attachment") -> str:
     return sanitized
 
 
-@backoff.on_exception(
-    backoff.expo,
-    (aiohttp.ClientError, asyncio.TimeoutError, aiohttp.ClientResponseError, DownloadIntegrityException),
-    max_tries=3
-)
+@backoff.on_exception(backoff.expo, (aiohttp.ClientError, asyncio.TimeoutError, aiohttp.ClientResponseError, DownloadIntegrityError), max_tries=3)
 async def download_file(session: aiohttp.ClientSession, url: str, output_dir: Path, filename: str, semaphore: asyncio.Semaphore) -> bool:
     filepath = output_dir / filename
     if filepath.exists() and filepath.stat().st_size > 0:
@@ -91,14 +88,13 @@ async def download_file(session: aiohttp.ClientSession, url: str, output_dir: Pa
                             size_counter += len(chunk)
 
                 cl_raw = response.headers.get("Content-Length")
-                if cl_raw and cl_raw.isdigit():
-                    if int(cl_raw) != size_counter:
-                        raise DownloadIntegrityException(f"Niezgodny rozmiar: {size_counter}/{cl_raw}")
+                if cl_raw and cl_raw.isdigit() and int(cl_raw) != size_counter:
+                    raise DownloadIntegrityError(f"Niezgodny rozmiar: {size_counter}/{cl_raw}")
 
                 temp_filepath.replace(filepath)
                 return True
 
-        except (aiohttp.ClientError, asyncio.TimeoutError, DownloadIntegrityException) as e:
+        except (TimeoutError, aiohttp.ClientError, DownloadIntegrityError) as e:
             logger.error(f"Błąd pobierania {filename} (próba zostanie powtórzona): {e}")
 
             if temp_filepath.exists():
@@ -113,6 +109,7 @@ async def download_file(session: aiohttp.ClientSession, url: str, output_dir: Pa
                 with contextlib.suppress(Exception):
                     temp_filepath.unlink()
             return False
+
 
 async def fetch_page(session: aiohttp.ClientSession, page_number: int, semaphore: asyncio.Semaphore) -> str:
     params = {"page": page_number, "limit": 100}
