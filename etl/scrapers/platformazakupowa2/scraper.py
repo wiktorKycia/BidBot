@@ -179,6 +179,7 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
                 filename = sanitize_filename(td_filename.text.strip())
                 ext = Path(filename).suffix.lower().lstrip(".")
 
+                #tymczasowo dla testów, zrobione jeszcze po pr będzie handlowanie zipów
                 if ext in ["zip", "7z"]:
                     filename = None
 
