@@ -111,15 +111,17 @@ async def download_file(session: aiohttp.ClientSession, url: str, output_dir: Pa
             return False
 
 
+@backoff.on_exception(backoff.expo, (aiohttp.ClientError, asyncio.TimeoutError, aiohttp.ClientResponseError), max_tries=3)
 async def fetch_page(session: aiohttp.ClientSession, page_number: int, semaphore: asyncio.Semaphore) -> str:
     params = {"page": page_number, "limit": 100}
     async with semaphore:
         try:
-            async with session.get(ALL_RESOURCES_URL, params=params) as response:
-                if response.status != 200:
-                    logger.error(f"Błąd HTTP {response.status} dla str. {page_number}")
-                    return ""
+            async with session.get(ALL_RESOURCES_URL, params=params, timeout=60) as response:
+                response.raise_for_status()
                 return await response.text()
+        except (aiohttp.ClientError, asyncio.TimeoutError, aiohttp.ClientResponseError) as e:
+            logger.error(f"Błąd fetch_page {page_number} (próba zostanie powtórzona): {e}")
+            raise
         except Exception as e:
             logger.error(f"Błąd fetch_page {page_number}: {e}")
             return ""
