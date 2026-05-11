@@ -1,6 +1,6 @@
 import asyncio
 import hashlib
-import json
+from etl.utils import save_json, save_to_file
 import logging
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -50,16 +50,6 @@ def get_last_run_date() -> datetime:
 
 def set_last_run_date(dt: datetime):
     LAST_RUN_FILE.write_text(dt.isoformat())
-
-
-async def save_text(filepath: Path, data: str):
-    async with aiofiles.open(filepath, mode="w", encoding="utf-8") as f:
-        await f.write(data)
-
-
-async def save_json(filepath: Path, data: dict):
-    async with aiofiles.open(filepath, mode="w", encoding="utf-8") as f:
-        await f.write(json.dumps(data, ensure_ascii=False, indent=2))
 
 
 def extract_direct_url(url: str) -> str:
@@ -201,7 +191,7 @@ async def process_single_notice(
     doc = BeautifulSoup(raw_html_desc, "lxml")
     clean_description = doc.get_text(separator="\n", strip=True)
 
-    await save_text(RAW_DIR / f"{notice_id}.html", raw_html_desc)
+    await save_to_file(RAW_DIR / f"{notice_id}.html", raw_html_desc)
 
     attachment_links = set()
     for a_tag in doc.find_all("a", href=True):

@@ -1,9 +1,8 @@
 import asyncio
-import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-import aiofiles
+from etl.utils import save_json
 import aiohttp
 from aiohttp import TCPConnector
 from aiohttp.resolver import AsyncResolver
@@ -90,13 +89,6 @@ def parse_notice(raw_data: dict) -> dict:
         "description": description_text,
         "attachments": attachments,
     }
-
-
-async def save_json(filepath: Path, data: dict):
-    """Asynchroniczny zapis pliku JSON."""
-    async with aiofiles.open(filepath, mode="w", encoding="utf-8") as f:
-        await f.write(json.dumps(data, ensure_ascii=False, indent=2))
-
 
 async def fetch_page(
     session: aiohttp.ClientSession,

@@ -1,7 +1,7 @@
 import asyncio
 import contextlib
 import hashlib
-import json
+from etl.utils import save_json, save_to_file
 import logging
 import re
 from datetime import UTC, datetime
@@ -39,17 +39,6 @@ def is_tender_open(deadline_dt: datetime) -> bool:
     if deadline_dt:
         return deadline_dt > datetime.now(UTC)
     return False
-
-
-async def save_json(filepath: Path, data: dict):
-    async with aiofiles.open(filepath, mode="w", encoding="utf-8") as f:
-        json_data = json.dumps(data, ensure_ascii=False, indent=2)
-        await f.write(json_data)
-
-
-async def save_html(filepath: Path, data: str):
-    async with aiofiles.open(filepath, mode="w", encoding="utf-8") as f:
-        await f.write(data)
 
 
 def sanitize_filename(filename: str, fallback: str = "attachment") -> str:
@@ -286,7 +275,7 @@ async def process_page(session: aiohttp.ClientSession, page_number: int, semapho
             "attachments": details.get("attachments"),
         }
 
-        await save_html(RAW_DIR / f"{notice_id}.html", details["raw_html"])
+        await save_to_file(RAW_DIR / f"{notice_id}.html", details["raw_html"])
         await save_json(PARSED_DIR / f"{notice_id}.json", parsed_data)
         return True
 
