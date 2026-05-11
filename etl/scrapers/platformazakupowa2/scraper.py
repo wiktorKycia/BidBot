@@ -67,6 +67,8 @@ def sanitize_filename(filename: str, fallback: str = "attachment") -> str:
 @backoff.on_exception(backoff.expo, (aiohttp.ClientError, asyncio.TimeoutError, aiohttp.ClientResponseError, DownloadIntegrityError), max_tries=3)
 async def download_file(session: aiohttp.ClientSession, url: str, target_dir: Path, filename: str, semaphore: asyncio.Semaphore):
     file_path = target_dir / filename
+    if file_path.exists() and file_path.stat().st_size > 0:
+        return True
 
     async with semaphore:
         try:
