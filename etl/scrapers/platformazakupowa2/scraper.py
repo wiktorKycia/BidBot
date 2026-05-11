@@ -324,22 +324,26 @@ async def process_page(session: aiohttp.ClientSession, page_number: int, semapho
 
 
 async def get_pages_number(session: aiohttp.ClientSession, semaphore: asyncio.Semaphore):
-    data = await fetch_page(session, 1, semaphore)
-    if not data:
-        return 1
-
-    doc = BeautifulSoup(data, "lxml")
-    ul = doc.find("ul", class_="pagination")
-    if not ul:
-        return 1
-
-    li_list = ul.find_all("li")
     try:
-        last_page_text = li_list[-2].a.text
-        return int(last_page_text)
-    except Exception:
-        return 1
+        data = await fetch_page(session, 1, semaphore)
+        doc = BeautifulSoup(data, "lxml")
 
+        if not data:
+            return 0 # nie wiem co tu dać, czy jak html jest pusty to zwrócić, że jest 0 stron, czy jakiś error
+
+        return int(doc.select("ul.pagination li")[-2].get_text(strip=True))
+    except IndexError as e:
+        logger.error(f"Pagination interface is not being displayed correctly, cannot get the number of the last page: {e}")
+        raise
+    except ValueError as e:
+        logger.error(f"Invalid pagination value, cannot parse last page number: {e}")
+        raise
+    except AttributeError as e:
+        logger.error(f"Pagination structure is missing expected elements, cannot get last page number: {e}")
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+        raise
 
 async def main():
     semaphore = asyncio.Semaphore(3)
