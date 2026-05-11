@@ -125,15 +125,19 @@ async def fetch_page(session: aiohttp.ClientSession, page_number: int, semaphore
             raise
 
 
+@backoff.on_exception(backoff.expo, (aiohttp.ClientError, asyncio.TimeoutError, aiohttp.ClientResponseError), max_tries=3)
 async def fetch_notice_details(session: aiohttp.ClientSession, notice_url: str, semaphore: asyncio.Semaphore):
     async with semaphore:
         try:
             async with session.get(notice_url, headers={"Accept-Language": "pl"}) as response:
-                if response.status == 200:
-                    return await response.text()
-                return ""
+                response.raise_for_status()
+                return await response.text()
+        except (TimeoutError, aiohttp.ClientError, aiohttp.ClientResponseError) as e:
+            logger.error(f"Błąd fetch_notice_details {notice_url} (próba zostanie powtórzona): {e}")
+            raise
         except Exception:
-            return ""
+            logger.error(f"Błąd fetch_notice_details {notice_url}: {e}")
+            raise
 
 
 async def process_notice_details(session: aiohttp.ClientSession, notice_url: str, notice_id: str, semaphore: asyncio.Semaphore) -> dict:
