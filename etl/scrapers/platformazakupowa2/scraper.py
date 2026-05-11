@@ -33,7 +33,8 @@ BASE_URL = "https://platformazakupowa.pl"
 ALL_RESOURCES_URL = "https://platformazakupowa.pl/all"
 
 ORDER_TYPE_DICT = {
-    "Dostawa": "Dostawy",
+    "Dostawa": "Dostawy",  # na platformie zakupowej rodzaj "Dostawy" jest już w liczbie mnogiej, więc wg. mnie można zakomentować,
+    # żeby nie rzucało warningów niepotrzebnie
     "Usługa": "Usługi",
     "Robota budowlana": "Roboty budowlane",
 }
