@@ -32,6 +32,12 @@ logger = logging.getLogger(__name__)
 BASE_URL = "https://platformazakupowa.pl"
 ALL_RESOURCES_URL = "https://platformazakupowa.pl/all"
 
+ORDER_TYPE_DICT = {
+    "Dostawa": "Dostawy",
+    "Usługa": "Usługi",
+    "Robota budowlana": "Roboty budowlane",
+}
+
 
 class DownloadIntegrityError(Exception):
     """Błąd rzucany, gdy rozmiar pliku nie zgadza się z nagłówkiem Content-Length."""
@@ -150,6 +156,7 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
     notice_doc = BeautifulSoup(data, "lxml")
     organisation = "Nie podano nazwy"
     publication_date_dt = None
+    order_type = None
 
     li_items = notice_doc.find_all("li", class_="proceeding-info-list-item")
     for li in li_items:
@@ -162,6 +169,15 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
             texts = list(li.stripped_strings)
             if len(texts) > 1:
                 organisation = " ".join(texts[1:])
+
+        elif "Rodzaj" in label_text:
+            texts = list(li.stripped_strings)
+            if len(texts) > 1:
+                order_type = " ".join(texts[1:]).strip()
+                if order_type in ORDER_TYPE_DICT:
+                    order_type = ORDER_TYPE_DICT[order_type]  # zamiana na liczbę mnogą
+                else:
+                    logger.warning(f"Nieznany rodzaj zamówienia: {order_type}, dostępne rodzaje: {' '.join([ot for ot in ORDER_TYPE_DICT])}")
 
         elif any(x in label_text for x in ["Opublikowano", "Zamieszczenia"]):
             texts = list(li.stripped_strings)
@@ -228,6 +244,7 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
         "client_name": organisation,
         "publication_date_dt": publication_date_dt,
         "description": desc,
+        "order_type": order_type,
         "raw_html": notice_doc.prettify(),
         "attachments": attachments_list,
     }
