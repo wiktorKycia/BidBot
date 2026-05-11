@@ -122,7 +122,7 @@ async def fetch_page(session: aiohttp.ClientSession, page_number: int, semaphore
             raise
         except Exception as e:
             logger.error(f"Błąd fetch_page {page_number}: {e}")
-            return ""
+            raise
 
 
 async def fetch_notice_details(session: aiohttp.ClientSession, notice_url: str, semaphore: asyncio.Semaphore):
