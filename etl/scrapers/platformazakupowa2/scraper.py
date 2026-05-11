@@ -31,7 +31,7 @@ class DownloadIntegrityError(Exception):
     pass
 
 
-def is_downloaded(notice_id: str) -> bool:
+def check_if_notice_html_already_downloaded(notice_id: str) -> bool:
     return (RAW_DIR / f"{notice_id}.html").exists()
 
 
@@ -250,7 +250,7 @@ async def process_page(session: aiohttp.ClientSession, page_number: int, semapho
         notice_url = urljoin(BASE_URL, a_tag["href"])
         notice_id = notice_url.split("/")[-1]
 
-        if is_downloaded(notice_id):
+        if check_if_notice_html_already_downloaded(notice_id):
             return False
 
         span = notice_div.find("span", class_="auction-time")
