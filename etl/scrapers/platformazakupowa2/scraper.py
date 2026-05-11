@@ -42,12 +42,14 @@ def is_tender_open(deadline_dt: datetime) -> bool:
 
 
 def sanitize_filename(filename: str, fallback: str = "attachment") -> str:
+    INVALID_FILENAME_CHARS_PATTERN = re.compile(r'[<>:"/\\|?*\x00-\x1f\x7f-\x9f]')
+
     if not filename:
         return fallback
 
     clean_path = filename.replace("\\", "/")
     basename = Path(clean_path).name.strip()
-    sanitized = re.sub(r'[<>:"/\\|?*\x00-\x1f\x7f-\x9f]', "_", basename).strip(" .")
+    sanitized = INVALID_FILENAME_CHARS_PATTERN.sub("_", basename).strip(" .")
 
     if not sanitized:
         return fallback
@@ -167,8 +169,8 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
             td_filename = row.find("td", class_="text-left")
 
             if a_tag and td_filename:
-                filename = sanitize_filename(td_filename.text.strip())
-                ext = Path(filename).suffix.lower().lstrip(".")
+                file_path = Path(sanitize_filename(td_filename.text.strip()))
+                ext = file_path.suffix.lower().lstrip(".")
 
                 # tymczasowo dla testów, zrobione jeszcze po pr będzie handlowanie zipów
                 if ext in ["zip", "7z"]:
