@@ -177,7 +177,7 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
                 if order_type in ORDER_TYPE_DICT:
                     order_type = ORDER_TYPE_DICT[order_type]  # zamiana na liczbę mnogą
                 else:
-                    logger.warning(f"Nieznany rodzaj zamówienia: {order_type}, dostępne rodzaje: {' '.join([ot for ot in ORDER_TYPE_DICT])}")
+                    logger.warning(f"Nieznany rodzaj zamówienia: {order_type}, dostępne rodzaje: {' '.join(ORDER_TYPE_DICT.keys())}")
 
         elif any(x in label_text for x in ["Opublikowano", "Zamieszczenia"]):
             texts = list(li.stripped_strings)
