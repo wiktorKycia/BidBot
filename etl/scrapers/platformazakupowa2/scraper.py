@@ -119,7 +119,7 @@ async def fetch_page(session: aiohttp.ClientSession, page_number: int, semaphore
             async with session.get(ALL_RESOURCES_URL, params=params, timeout=60) as response:
                 response.raise_for_status()
                 return await response.text()
-        except (aiohttp.ClientError, asyncio.TimeoutError, aiohttp.ClientResponseError) as e:
+        except (TimeoutError, aiohttp.ClientError, aiohttp.ClientResponseError) as e:
             logger.error(f"Błąd fetch_page {page_number} (próba zostanie powtórzona): {e}")
             raise
         except Exception as e:
