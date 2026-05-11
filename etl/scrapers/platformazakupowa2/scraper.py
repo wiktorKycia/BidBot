@@ -169,8 +169,8 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
                     clean_date_str = " ".join(raw_date.split()[:2])
                     parsed_dt = datetime.strptime(clean_date_str, "%Y-%m-%d %H:%M:%S")
                     publication_date_dt = parsed_dt.replace(tzinfo=ZoneInfo("Europe/Warsaw")).astimezone(UTC)
-                except Exception:
-                    pass
+                except ValueError:
+                    logger.warning("Błąd parsowania daty publikacji: %r", raw_date)
 
     attachments_list = []
     table = notice_doc.find("table", {"id": "allAttachmentsTable"})
