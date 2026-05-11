@@ -324,6 +324,7 @@ async def process_page(session: aiohttp.ClientSession, page_number: int, semapho
             "publication_date": pub_date,
             "submitting_offers_date": deadline_dt.isoformat(),
             "client_name": details.get("client_name"),
+            "order_type": details.get("order_type"),
             "description": details.get("description"),
             "attachments": details.get("attachments"),
         }
