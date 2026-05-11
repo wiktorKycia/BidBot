@@ -154,9 +154,9 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
         return {}
 
     notice_doc = BeautifulSoup(data, "lxml")
-    organisation = "Nie podano nazwy"
-    publication_date_dt = None
-    order_type = None
+    organisation: str | None = None
+    publication_date_dt: datetime | None = None
+    order_type: str | None = None
 
     li_items = notice_doc.find_all("li", class_="proceeding-info-list-item")
     for li in li_items:
@@ -183,10 +183,10 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
             texts = list(li.stripped_strings)
             if len(texts) > 1:
                 try:
-                    raw_date = " ".join(texts[1:]).strip()
-                    clean_date_str = " ".join(raw_date.split()[:2])
-                    parsed_dt = datetime.strptime(clean_date_str, "%Y-%m-%d %H:%M:%S")
-                    publication_date_dt = parsed_dt.replace(tzinfo=ZoneInfo("Europe/Warsaw")).astimezone(UTC)
+                    raw_date: str = " ".join(texts[1:]).strip()
+                    clean_date_str: str = " ".join(raw_date.split()[:2])
+                    parsed_dt: datetime = datetime.strptime(clean_date_str, "%Y-%m-%d %H:%M:%S")
+                    publication_date_dt: datetime = parsed_dt.replace(tzinfo=ZoneInfo("Europe/Warsaw")).astimezone(UTC)
                 except ValueError:
                     logger.warning("Błąd parsowania daty publikacji: %r", raw_date)
 
