@@ -1,22 +1,30 @@
 import asyncio
-import contextlib
-import hashlib
-from etl.utils import save_json, save_to_file
 import logging
 import re
+import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urljoin
 from zoneinfo import ZoneInfo
 
-import aiofiles
 import aiohttp
 import backoff
 from aiohttp import TCPConnector
 from aiohttp.resolver import AsyncResolver
 from bs4 import BeautifulSoup
 
-from etl.settings import ATTACHMENTS_DIR, MAX_ATTACHMENTS, PARSED_DIR, RAW_DIR, setup_logging
+from etl.settings import (
+    ATTACHMENTS_DIR,
+    MAX_ATTACHMENT_SIZE,
+    MAX_ATTACHMENTS,
+    MAX_UNCOMPRESSED_SIZE,
+    MAX_ZIP_FILES,
+    MAX_ZIP_RATIO,
+    PARSED_DIR,
+    RAW_DIR,
+    setup_logging,
+)
+from etl.utils import save_json, save_to_file
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -42,14 +50,14 @@ def is_tender_open(deadline_dt: datetime) -> bool:
 
 
 def sanitize_filename(filename: str, fallback: str = "attachment") -> str:
-    INVALID_FILENAME_CHARS_PATTERN = re.compile(r'[<>:"/\\|?*\x00-\x1f\x7f-\x9f]')
+    invalid_filename_chars_pattern = re.compile(r'[<>:"/\\|?*\x00-\x1f\x7f-\x9f]')
 
     if not filename:
         return fallback
 
     clean_path = filename.replace("\\", "/")
     basename = Path(clean_path).name.strip()
-    sanitized = INVALID_FILENAME_CHARS_PATTERN.sub("_", basename).strip(" .")
+    sanitized = invalid_filename_chars_pattern.sub("_", basename).strip(" .")
 
     if not sanitized:
         return fallback
@@ -57,48 +65,47 @@ def sanitize_filename(filename: str, fallback: str = "attachment") -> str:
 
 
 @backoff.on_exception(backoff.expo, (aiohttp.ClientError, asyncio.TimeoutError, aiohttp.ClientResponseError, DownloadIntegrityError), max_tries=3)
-async def download_file(session: aiohttp.ClientSession, url: str, output_dir: Path, filename: str, semaphore: asyncio.Semaphore) -> bool:
-    filepath = output_dir / filename
-    if filepath.exists() and filepath.stat().st_size > 0:
-        return True
-
-    m = hashlib.md5(url.encode())
-    url_hash = m.hexdigest()[:8]
-    temp_filepath = filepath.with_suffix(f".{url_hash}.tmp")
+async def download_file(session: aiohttp.ClientSession, url: str, target_dir: Path, filename: str, semaphore: asyncio.Semaphore):
+    file_path = target_dir / filename
 
     async with semaphore:
         try:
             async with session.get(url, timeout=60) as response:
                 response.raise_for_status()
+                content_length = int(response.headers.get("Content-Length", 0))
+                if content_length > MAX_ATTACHMENT_SIZE:
+                    logger.warning(f"Plik odrzucony (nagłówek): {filename} przekracza {MAX_ATTACHMENT_SIZE} bajtów.")
+                    return False
 
-                size_counter = 0
-                async with aiofiles.open(temp_filepath, "wb") as f:
+                downloaded_size = 0
+                with open(file_path, "wb") as f:
                     async for chunk in response.content.iter_chunked(64 * 1024):
-                        if chunk:
-                            await f.write(chunk)
-                            size_counter += len(chunk)
+                        downloaded_size += len(chunk)
 
-                cl_raw = response.headers.get("Content-Length")
-                if cl_raw and cl_raw.isdigit() and int(cl_raw) != size_counter:
-                    raise DownloadIntegrityError(f"Niezgodny rozmiar: {size_counter}/{cl_raw}")
+                        if downloaded_size > MAX_ATTACHMENT_SIZE:
+                            file_path.unlink(missing_ok=True)
+                            logger.warning(f"Plik odrzucony (stream): {filename} przekroczył limit wielkości w trakcie pobierania.")
+                            return False
 
-                temp_filepath.replace(filepath)
-                return True
+                        f.write(chunk)
 
-        except (TimeoutError, aiohttp.ClientError, DownloadIntegrityError) as e:
-            logger.error(f"Błąd pobierania {filename} (próba zostanie powtórzona): {e}")
+            if file_path.suffix.lower() == ".zip":
+                success = await asyncio.to_thread(safe_extract_zip, file_path, target_dir)
 
-            if temp_filepath.exists():
-                with contextlib.suppress(Exception):
-                    temp_filepath.unlink()
+                if success:
+                    file_path.unlink(missing_ok=True)
+                    return "extracted"
+                else:
+                    file_path.unlink(missing_ok=True)
+                    logger.error(f"Nieudane/niebezpieczne rozpakowywanie pliku: {filename}")
+                    return False
 
-            raise e
+            return True
 
         except Exception as e:
-            logger.critical(f"Błąd pobierania {filename}: {e}")
-            if temp_filepath.exists():
-                with contextlib.suppress(Exception):
-                    temp_filepath.unlink()
+            if file_path.exists():
+                file_path.unlink(missing_ok=True)
+            logger.error(f"Błąd podczas pobierania {filename}: {e}")
             return False
 
 
@@ -170,11 +177,7 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
 
             if a_tag and td_filename:
                 file_path = Path(sanitize_filename(td_filename.text.strip()))
-                ext = file_path.suffix.lower().lstrip(".")
-
-                # tymczasowo dla testów, zrobione jeszcze po pr będzie handlowanie zipów
-                if ext in ["zip", "7z"]:
-                    filename = None
+                filename = file_path.name
 
                 attachments_list.append(
                     {
@@ -182,17 +185,14 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
                         "filename": filename,
                         "local_path": str(Path(notice_id) / filename) if filename else None,
                         "downloaded": False,
+                        "is_zip": file_path.suffix.lower() == ".zip",
                     }
                 )
 
     if attachments_list:
         notice_dir = ATTACHMENTS_DIR / notice_id
 
-        downloadable = []
-        for a in attachments_list:
-            if a["filename"]:
-                downloadable.append(a)
-
+        downloadable = [a for a in attachments_list if a["filename"]]
         to_download = downloadable[:MAX_ATTACHMENTS]
 
         if to_download:
@@ -209,6 +209,9 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
             for i, res in enumerate(results):
                 if res is True:
                     to_download[i]["downloaded"] = True
+                elif res == "extracted":
+                    to_download[i]["downloaded"] = True
+                    to_download[i]["extracted_status"] = "success"
                 elif isinstance(res, Exception):
                     logger.error(f"Błąd gather załącznika {notice_id}: {res}")
 
@@ -222,6 +225,31 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
         "raw_html": notice_doc.prettify(),
         "attachments": attachments_list,
     }
+
+
+def safe_extract_zip(zip_path: Path, extract_dir: Path) -> bool:
+    try:
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            infolist = zf.infolist()
+
+            if len(infolist) > MAX_ZIP_FILES:
+                return False
+
+            total_size = 0
+            for info in infolist:
+                total_size += info.file_size
+                if total_size > MAX_UNCOMPRESSED_SIZE:
+                    return False
+
+            compressed_size = zip_path.stat().st_size or 1
+            if (total_size / compressed_size) > MAX_ZIP_RATIO:
+                return False
+
+            zf.extractall(path=extract_dir)
+            return True
+
+    except zipfile.BadZipFile:
+        return False
 
 
 async def process_page(session: aiohttp.ClientSession, page_number: int, semaphore: asyncio.Semaphore) -> int:

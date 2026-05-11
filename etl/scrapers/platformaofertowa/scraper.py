@@ -1,6 +1,5 @@
 import asyncio
 import hashlib
-from etl.utils import save_json, save_to_file
 import logging
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -12,6 +11,8 @@ import backoff
 from aiohttp import TCPConnector
 from aiohttp.resolver import AsyncResolver
 from bs4 import BeautifulSoup
+
+from etl.utils import save_json, save_to_file
 
 logging.basicConfig(
     level=logging.INFO,

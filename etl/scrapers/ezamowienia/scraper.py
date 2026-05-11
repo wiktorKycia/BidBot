@@ -2,11 +2,12 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from etl.utils import save_json
 import aiohttp
 from aiohttp import TCPConnector
 from aiohttp.resolver import AsyncResolver
 from bs4 import BeautifulSoup
+
+from etl.utils import save_json
 
 API_URL = "https://ezamowienia.gov.pl/mo-board/api/v1/notice"
 
@@ -89,6 +90,7 @@ def parse_notice(raw_data: dict) -> dict:
         "description": description_text,
         "attachments": attachments,
     }
+
 
 async def fetch_page(
     session: aiohttp.ClientSession,

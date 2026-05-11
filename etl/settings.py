@@ -8,6 +8,10 @@ PARSED_DIR = DATA_DIR / "parsed"
 ATTACHMENTS_DIR = DATA_DIR / "attachments"
 LOG_DIR = Path("logs")
 MAX_ATTACHMENTS = 15
+MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024  # 25 MB - max rozmiar pobieranego pliku
+MAX_UNCOMPRESSED_SIZE = 250 * 1024 * 1024  # 250 MB - max waga po rozpakowaniu
+MAX_ZIP_FILES = 1000  # Max ilość plików wewnątrz zipa
+MAX_ZIP_RATIO = 100  # Max stosunek rozmiaru rozpakowanego do oryginalnego
 
 for d in [RAW_DIR, PARSED_DIR, ATTACHMENTS_DIR, LOG_DIR]:
     if not d.exists():
