@@ -329,7 +329,7 @@ async def get_pages_number(session: aiohttp.ClientSession, semaphore: asyncio.Se
         doc = BeautifulSoup(data, "lxml")
 
         if not data:
-            return 0 # nie wiem co tu dać, czy jak html jest pusty to zwrócić, że jest 0 stron, czy jakiś error
+            return 0  # nie wiem co tu dać, czy jak html jest pusty to zwrócić, że jest 0 stron, czy jakiś error
 
         return int(doc.select("ul.pagination li")[-2].get_text(strip=True))
     except IndexError as e:
@@ -344,6 +344,7 @@ async def get_pages_number(session: aiohttp.ClientSession, semaphore: asyncio.Se
     except Exception as e:
         logger.error(f"Unexpected error: {e}")
         raise
+
 
 async def main():
     semaphore = asyncio.Semaphore(3)
