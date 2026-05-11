@@ -135,7 +135,7 @@ async def fetch_notice_details(session: aiohttp.ClientSession, notice_url: str, 
         except (TimeoutError, aiohttp.ClientError, aiohttp.ClientResponseError) as e:
             logger.error(f"Błąd fetch_notice_details {notice_url} (próba zostanie powtórzona): {e}")
             raise
-        except Exception:
+        except Exception as e:
             logger.error(f"Błąd fetch_notice_details {notice_url}: {e}")
             raise
 
