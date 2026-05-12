@@ -12,24 +12,14 @@ from aiohttp import TCPConnector
 from aiohttp.resolver import AsyncResolver
 from bs4 import BeautifulSoup
 
+from etl.settings import ATTACHMENTS_DIR, BASE_DIR, LAST_RUN_FILE, PARSED_DIR, RAW_DIR, setup_logging
 from etl.utils import save_json, save_to_file
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
+setup_logging()
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://platformaofertowa.pl"
 API_LIST_URL = "https://api.platformaofertowa.pl/tenders/search/best-match"
-
-BASE_DIR = Path(__file__).resolve().parent
-DATA_DIR = BASE_DIR / "data"
-RAW_DIR = DATA_DIR / "raw"
-PARSED_DIR = DATA_DIR / "parsed"
-ATTACHMENTS_DIR = DATA_DIR / "attachments"
-LAST_RUN_FILE = DATA_DIR / "last_run.txt"
 
 
 def setup_directories():

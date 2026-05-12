@@ -7,6 +7,7 @@ RAW_DIR = DATA_DIR / "raw_html"
 PARSED_DIR = DATA_DIR / "parsed"
 ATTACHMENTS_DIR = DATA_DIR / "attachments"
 LOG_DIR = Path("logs")
+LAST_RUN_FILE = DATA_DIR / "last_run.txt"
 MAX_ATTACHMENTS = 15
 MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024  # 25 MB - max rozmiar pobieranego pliku
 MAX_UNCOMPRESSED_SIZE = 250 * 1024 * 1024  # 250 MB - max waga po rozpakowaniu
