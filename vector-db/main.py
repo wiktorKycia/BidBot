@@ -29,22 +29,25 @@ def delete_collection(chroma_path: str, collection_name: str):
     except Exception as e:
         raise Exception(f"Unable to delete collection: {e}")
 
-from langchain_community.document_loaders import JSONLoader
+from langchain_community.document_loaders import JSONLoader, DirectoryLoader
 import json
 from pathlib import Path
 
-# file_path = Path(__file__).resolve().parent / "etl" / "scrapers" / "platformazakupowa2" / "data" / "parsed" / "435638.json"
+folder_path = Path(__file__).resolve().parent.parent / "etl" / "scrapers" / "platformazakupowa2" / "data" / "parsed"
 file_path = "./example_data.json"
 data = json.loads(Path(file_path).read_text())
-loader = JSONLoader(file_path=file_path, jq_schema='.', text_content=False)
-document = loader.load()
+
+loader = DirectoryLoader(folder_path, glob="**/*.json", loader_cls=JSONLoader, loader_kwargs = {'jq_schema':'.', 'text_content': False})
+
+# loader = JSONLoader(file_path=file_path, jq_schema='.', text_content=False)
+documents = loader.load()
 
 # clear collection before adding documents
 ids = vector_store.get()["ids"]
 if len(ids) > 0:
     vector_store.delete(ids)
 
-vector_store.add_documents(document)
+vector_store.add_documents(documents)
 
 from langchain_core.runnables import RunnablePassthrough, RunnableLambda
 from langchain_core.prompts import ChatPromptTemplate
