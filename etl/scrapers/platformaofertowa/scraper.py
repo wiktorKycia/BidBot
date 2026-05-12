@@ -1,6 +1,5 @@
 import asyncio
 import hashlib
-import json
 import logging
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -12,6 +11,8 @@ import backoff
 from aiohttp import TCPConnector
 from aiohttp.resolver import AsyncResolver
 from bs4 import BeautifulSoup
+
+from etl.utils import save_json, save_to_file
 
 logging.basicConfig(
     level=logging.INFO,
@@ -52,16 +53,6 @@ def set_last_run_date(dt: datetime):
     LAST_RUN_FILE.write_text(dt.isoformat())
 
 
-async def save_text(filepath: Path, data: str):
-    async with aiofiles.open(filepath, mode="w", encoding="utf-8") as f:
-        await f.write(data)
-
-
-async def save_json(filepath: Path, data: dict):
-    async with aiofiles.open(filepath, mode="w", encoding="utf-8") as f:
-        await f.write(json.dumps(data, ensure_ascii=False, indent=2))
-
-
 def extract_direct_url(url: str) -> str:
     """Ekstraktuje bezpośredni URL, jeśli link prowadzi do podglądu (np. Google Drive Viewer)."""
     parsed = urlparse(url)
@@ -74,7 +65,7 @@ def extract_direct_url(url: str) -> str:
 
 @backoff.on_exception(
     backoff.expo,
-    (aiohttp.ClientError, asyncio.TimeoutError),
+    (aiohttp.ClientError, asyncio.TimeoutError, aiohttp.ClientResponseError),
     max_tries=3,
     logger=logger,
 )
@@ -201,7 +192,7 @@ async def process_single_notice(
     doc = BeautifulSoup(raw_html_desc, "lxml")
     clean_description = doc.get_text(separator="\n", strip=True)
 
-    await save_text(RAW_DIR / f"{notice_id}.html", raw_html_desc)
+    await save_to_file(RAW_DIR / f"{notice_id}.html", raw_html_desc)
 
     attachment_links = set()
     for a_tag in doc.find_all("a", href=True):
