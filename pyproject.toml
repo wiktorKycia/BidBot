@@ -11,6 +11,11 @@ dependencies = [
     "asyncio>=4.0.0",
     "backoff>=2.2.1",
     "beautifulsoup4>=4.14.3",
+    "chromadb>=1.5.9",
+    "dotenv>=0.9.9",
+    "langchain>=1.2.18",
+    "langchain-chroma>=1.1.0",
+    "langchain-openai>=1.2.1",
     "lxml>=6.1.0",
     "requests>=2.33.1",
 ]

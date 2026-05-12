@@ -9,3 +9,4 @@ etl/data
 data
 /logs
 /etl/scrapers/platformazakupowa2/logs
+.env
