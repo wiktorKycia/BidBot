@@ -1,10 +1,42 @@
 [project]
 name = "bidbot"
 version = "0.1.0"
+description = ""
+readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
+    "aiodns>=4.0.0",
     "aiofiles>=25.1.0",
     "aiohttp[speedups]>=3.13.5",
+    "asyncio>=4.0.0",
+    "backoff>=2.2.1",
     "beautifulsoup4>=4.14.3",
+    "lxml>=6.1.0",
     "requests>=2.33.1",
+]
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.6.0",
+]
+
+[tool.ruff]
+line-length = 150
+target-version = "py314"
+
+[tool.ruff.lint]
+extend-select = [
+    "W",
+    "I",
+    "B",
+    "UP",
+    "FURB",
+    "E",
+    "COM",
+    "C4",
+    "N",
+    "SIM",
+]
+ignore = [
+    "COM812"
 ]
