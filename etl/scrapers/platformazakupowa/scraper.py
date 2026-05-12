@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import random
 import re
 import zipfile
 from datetime import UTC, datetime
@@ -34,22 +35,22 @@ BASE_URL = "https://platformazakupowa.pl"
 ALL_RESOURCES_URL = "https://platformazakupowa.pl/all"
 
 ORDER_TYPE_DICT = {
-    "Dostawa": "Dostawy",  # na platformie zakupowej rodzaj "Dostawy" jest już w liczbie mnogiej, więc wg. mnie można zakomentować,
-    # żeby nie rzucało warningów niepotrzebnie
+    "Dostawa": "Dostawy",
+    "Dostawy": "Dostawy",
     "Usługa": "Usługi",
+    "Usługi": "Usługi",
     "Robota budowlana": "Roboty budowlane",
+    "Roboty budowlane": "Roboty budowlane",
 }
 
 
 class DownloadIntegrityError(Exception):
     """Błąd rzucany, gdy rozmiar pliku nie zgadza się z nagłówkiem Content-Length."""
-
     pass
 
 
 class HTMLEmptyError(Exception):
     """Błąd rzucany, gdy zwracany html jest pusty"""
-
     pass
 
 
@@ -79,16 +80,32 @@ def sanitize_filename(filename: str, fallback: str = "attachment") -> str:
 
 
 @backoff.on_exception(backoff.expo, (aiohttp.ClientError, asyncio.TimeoutError, aiohttp.ClientResponseError, DownloadIntegrityError), max_tries=3)
-async def download_file(session: aiohttp.ClientSession, url: str, target_dir: Path, filename: str, semaphore: asyncio.Semaphore):
+async def download_file(session: aiohttp.ClientSession, url: str, target_dir: Path, filename: str, semaphore: asyncio.Semaphore, referer_url: str):
     file_path = target_dir / filename
     if file_path.exists() and file_path.stat().st_size > 0:
         return True
 
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:150.0) Gecko/20100101 Firefox/150.0",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "pl,en;q=0.9,en-US;q=0.8",
+        "Upgrade-Insecure-Requests": "1",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "same-origin",
+        "Sec-Fetch-User": "?1",
+        "Referer": referer_url  # Dynamiczny referer wskazujący na stronę przetargu!
+    }
+
     async with semaphore:
+        await asyncio.sleep(random.uniform(2.0, 4.0))
+
         try:
-            async with session.get(url, timeout=60) as response:
+            # Dodajemy nagłówki do konkretnego żądania pobrania
+            async with session.get(url, headers=headers, timeout=60) as response:
                 response.raise_for_status()
                 content_length = int(response.headers.get("Content-Length", 0))
+
                 if content_length > MAX_ATTACHMENT_SIZE:
                     logger.warning(f"Plik odrzucony (nagłówek): {filename} przekracza {MAX_ATTACHMENT_SIZE} bajtów.")
                     return False
@@ -231,7 +248,7 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
 
             tasks = []
             for att in to_download:
-                t = download_file(session, att["url"], notice_dir, att["filename"], semaphore)
+                t = download_file(session, att["url"], notice_dir, att["filename"], semaphore, referer_url=notice_url)
                 tasks.append(t)
 
             results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -264,24 +281,32 @@ def safe_extract_zip(zip_path: Path, extract_dir: Path) -> bool:
             infolist = zf.infolist()
 
             if len(infolist) > MAX_ZIP_FILES:
+                logger.warning(f"ZIP {zip_path.name}: Za dużo plików ({len(infolist)} > {MAX_ZIP_FILES})")
                 return False
 
             total_size = 0
             for info in infolist:
                 total_size += info.file_size
                 if total_size > MAX_UNCOMPRESSED_SIZE:
+                    logger.warning(f"ZIP {zip_path.name}: Za duży po rozpakowaniu ({total_size} bajtów)")
                     return False
 
             compressed_size = zip_path.stat().st_size or 1
-            if (total_size / compressed_size) > MAX_ZIP_RATIO:
+            ratio = total_size / compressed_size
+            if ratio > MAX_ZIP_RATIO:
+                logger.warning(f"ZIP {zip_path.name}: Podejrzany stopień kompresji (zip-bomb ratio: {ratio:.2f})")
                 return False
 
             zf.extractall(path=extract_dir)
             return True
 
     except zipfile.BadZipFile:
+        rozmiar = zip_path.stat().st_size if zip_path.exists() else 0
+        logger.error(f"ZIP {zip_path.name}: Plik jest uszkodzony lub nie jest archiwum ZIP (rozmiar: {rozmiar} bajtów).")
         return False
-
+    except Exception as e:
+        logger.error(f"ZIP {zip_path.name}: Nieoczekiwany błąd dekompresji: {e}")
+        return False
 
 async def process_page(session: aiohttp.ClientSession, page_number: int, semaphore: asyncio.Semaphore) -> int:
     logger.info(f"Strona {page_number}...")
@@ -378,12 +403,19 @@ async def get_pages_number(session: aiohttp.ClientSession, semaphore: asyncio.Se
 
 
 async def main():
-    semaphore = asyncio.Semaphore(3)
+    semaphore = asyncio.Semaphore(1)
 
     resolver = AsyncResolver(nameservers=["1.1.1.1", "8.8.8.8"])
     connector = TCPConnector(resolver=resolver)
 
-    async with aiohttp.ClientSession(connector=connector) as session:
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+        "Accept-Language": "pl-PL,pl;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Referer": "https://platformazakupowa.pl/",
+    }
+
+    async with aiohttp.ClientSession(connector=connector, headers=headers) as session:
         total_pages = await get_pages_number(session, semaphore)
         logger.info(f"Znaleziono stron: {total_pages}")
 
