@@ -11,7 +11,7 @@ from langchain_openai import OpenAIEmbeddings
 from langchain_chroma import Chroma
 
 CHROMA_DB_PATH = "./chroma_langchain_db"
-embeddings = OpenAIEmbeddings(model=MODEL_EMBEDDINGS, api_key=OPENAI_API_KEY)
+embeddings = OpenAIEmbeddings(model=MODEL_EMBEDDINGS)
 
 vector_store = Chroma(
     collection_name="bid_info_json",
@@ -46,14 +46,14 @@ if len(ids) > 0:
 
 vector_store.add_documents(document)
 
-from langchain_core.runnables import RunnablePassthrough
+from langchain_core.runnables import RunnablePassthrough, RunnableLambda
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 
 def format_docs(docs):
     return "\n\n".join(doc.page_content for doc in docs)
 
-llm = ChatOpenAI(model=MODEL, api_key=OPENAI_API_KEY)
+llm = ChatOpenAI(model=MODEL)
 prompt = ChatPromptTemplate.from_messages(
     [
         ("system", """You are a helpful assistant and a literature specialist. Answer all questions to the best of your ability.
@@ -67,24 +67,42 @@ retriever = vector_store.as_retriever()
 
 rag_chain_from_docs = (
     {
-        "context": retriever | format_docs,
+        "context": retriever | RunnableLambda(format_docs),
         "input": RunnablePassthrough(),
     }
-    | prompt
+    | RunnableLambda(lambda values: prompt.format_messages(**values))
     | llm
 )
 
-import panel as pn
 
-pn.extension()
-
-
-async def callback(contents: str, user: str, instance: pn.chat.ChatInterface):
+def ask(question: str) -> str:
     message = ""
-    for response in rag_chain_from_docs.stream(contents):
+    for response in rag_chain_from_docs.stream(question):
         message += response.content
-        yield message
+    return message
 
 
-chat_interface = pn.chat.ChatInterface(callback=callback, callback_user="")
-chat_interface.servable()
+def main():
+    print("Console RAG chat ready. Type your question, or 'exit' to quit.")
+    while True:
+        try:
+            contents = input("\nYou: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\nBye.")
+            break
+
+        if not contents:
+            continue
+        if contents.lower() in {"exit", "quit"}:
+            print("Bye.")
+            break
+
+        try:
+            answer = ask(contents)
+            print(f"Assistant: {answer}")
+        except Exception as e:
+            print(f"Error: {e}")
+
+
+if __name__ == "__main__":
+    main()
