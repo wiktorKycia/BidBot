@@ -46,6 +46,12 @@ class DownloadIntegrityError(Exception):
     pass
 
 
+class HTMLEmptyError(Exception):
+    """Błąd rzucany, gdy zwracany html jest pusty"""
+
+    pass
+
+
 def check_if_notice_html_already_downloaded(notice_id: str) -> bool:
     return (RAW_DIR / f"{notice_id}.html").exists()
 
@@ -350,7 +356,7 @@ async def get_pages_number(session: aiohttp.ClientSession, semaphore: asyncio.Se
         doc = BeautifulSoup(data, "lxml")
 
         if not data:
-            return 0  # nie wiem co tu dać, czy jak html jest pusty to zwrócić, że jest 0 stron, czy jakiś error
+            raise HTMLEmptyError("Html returned from fetch_page is empty! Cannot get the number of pages")
 
         return int(doc.select("ul.pagination li")[-2].get_text(strip=True))
     except IndexError as e:
@@ -361,6 +367,9 @@ async def get_pages_number(session: aiohttp.ClientSession, semaphore: asyncio.Se
         raise
     except AttributeError as e:
         logger.error(f"Pagination structure is missing expected elements, cannot get last page number: {e}")
+        raise
+    except HTMLEmptyError as e:
+        logger.error(f"HTML error: {e}")
         raise
     except Exception as e:
         logger.error(f"Unexpected error: {e}")
