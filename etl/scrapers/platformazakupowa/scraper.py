@@ -7,6 +7,7 @@ from pathlib import Path
 from urllib.parse import urljoin
 from zoneinfo import ZoneInfo
 
+import aiofiles
 import aiohttp
 import backoff
 from aiohttp import TCPConnector
@@ -93,7 +94,7 @@ async def download_file(session: aiohttp.ClientSession, url: str, target_dir: Pa
                     return False
 
                 downloaded_size = 0
-                with open(file_path, "wb") as f:
+                async with aiofiles.open(file_path, "wb") as f:
                     async for chunk in response.content.iter_chunked(64 * 1024):
                         downloaded_size += len(chunk)
 
@@ -102,7 +103,7 @@ async def download_file(session: aiohttp.ClientSession, url: str, target_dir: Pa
                             logger.warning(f"Plik odrzucony (stream): {filename} przekroczył limit wielkości w trakcie pobierania.")
                             return False
 
-                        f.write(chunk)
+                        await f.write(chunk)
 
             if file_path.suffix.lower() == ".zip":
                 success = await asyncio.to_thread(safe_extract_zip, file_path, target_dir)
