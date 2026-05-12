@@ -8,4 +8,4 @@ etl/data
 /etl/scrapers/platformazakupowa/data
 data
 /logs
-/etl/scrapers/platformazakupowa2/logs
+/etl/scrapers/platformazakupowa/logs
