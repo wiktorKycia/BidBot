@@ -8,9 +8,11 @@ from pathlib import Path
 from typing import Any
 
 from chromadb import PersistentClient
+from chromadb.utils.batch_utils import create_batches
 from dotenv import load_dotenv
 from langchain_chroma import Chroma
 from langchain_community.document_loaders import DirectoryLoader, JSONLoader
+from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
@@ -29,6 +31,7 @@ vector_store = Chroma(collection_name="bid_info_json", embedding_function=embedd
 
 MAX_CONTEXT_DOCS = 5
 MAX_SEMANTIC_RESULTS = 4
+MAX_CHROMA_BATCH = 5461
 TRANSACTION_ID_PATTERN = re.compile(r"\b\d{6,}\b")
 
 
@@ -454,7 +457,14 @@ def delete_collection(chroma_path: str, collection_name: str):
         logger.exception("failed to delete collection=%s from path=%s", collection_name, chroma_path)
         raise Exception(f"Unable to delete collection: {e}") from e
 
-data_path = Path(__file__).resolve().parent.parent / "data"
+
+def add_documents_to_vector_store(documents: list[Document], vector_store: Chroma):
+    for i in range(0, len(documents), MAX_CHROMA_BATCH):
+        batch = documents[i:i+MAX_CHROMA_BATCH]
+        vector_store.add_documents(batch)
+
+
+data_path = Path(__file__).resolve().parent.parent.parent / "data"
 parsed_json_path = data_path / "parsed"
 attachments_path = data_path / "attachments"
 
@@ -469,7 +479,7 @@ if len(ids) > 0:
     logger.info("clearing existing vector store ids count=%d", len(ids))
     vector_store.delete(ids)
 
-vector_store.add_documents(documents)
+add_documents_to_vector_store(documents, vector_store)
 logger.info("added documents to vector store count=%d", len(documents))
 
 indexed_documents = [build_indexed_document(document) for document in documents]
