@@ -1,7 +1,9 @@
 import json
+import logging
 import os
 import re
 from dataclasses import dataclass
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +22,7 @@ MODEL_EMBEDDINGS = "text-embedding-3-small"
 
 
 CHROMA_DB_PATH = "./chroma_langchain_db"
+LOG_PATH = Path(__file__).resolve().with_name("vector_db.log")
 embeddings = OpenAIEmbeddings(model=MODEL_EMBEDDINGS)
 
 vector_store = Chroma(collection_name="bid_info_json", embedding_function=embeddings, persist_directory=CHROMA_DB_PATH)
@@ -27,6 +30,37 @@ vector_store = Chroma(collection_name="bid_info_json", embedding_function=embedd
 MAX_CONTEXT_DOCS = 5
 MAX_SEMANTIC_RESULTS = 4
 TRANSACTION_ID_PATTERN = re.compile(r"\b\d{6,}\b")
+
+
+def configure_logger() -> logging.Logger:
+    logger = logging.getLogger("bidbot.vector_db")
+    if logger.handlers:
+        return logger
+
+    logger.setLevel(logging.DEBUG)
+    logger.propagate = False
+
+    handler = RotatingFileHandler(LOG_PATH, maxBytes=5_000_000, backupCount=3, encoding="utf-8")
+    handler.setLevel(logging.DEBUG)
+    handler.setFormatter(logging.Formatter("%(asctime)s | %(levelname)s | %(message)s"))
+    logger.addHandler(handler)
+    return logger
+
+
+logger = configure_logger()
+
+
+def to_json_log(payload: Any) -> str:
+    return json.dumps(payload, ensure_ascii=False, default=str, indent=2)
+
+
+def document_log_payload(record: Any) -> dict[str, Any]:
+    return {
+        "source": record.source,
+        "title": record.title,
+        "transaction_ids": list(record.transaction_ids),
+        "raw_text": record.raw_text,
+    }
 
 
 @dataclass(frozen=True)
@@ -177,6 +211,18 @@ Rules:
     except Exception:
         payload = {}
 
+    logger.debug(
+        "retrieval_plan_input=%s",
+        to_json_log(
+            {
+                "question": question,
+                "conversation_history": conversation_history,
+                "history_text": history_text,
+            }
+        ),
+    )
+    logger.debug("retrieval_plan_raw_output=%s", to_json_log(payload))
+
     # if a transaction id is present, match it directly against the indexed documents
     detected_ids = extract_transaction_ids_from_text(question, history_text)
     planned_ids = payload.get("transaction_ids", []) if isinstance(payload, dict) else []
@@ -200,35 +246,96 @@ Rules:
         needs_search = True
         top_k = max(top_k, min(3, MAX_CONTEXT_DOCS))
 
+    logger.debug(
+        "retrieval_plan_final=%s",
+        to_json_log(
+            {
+                "needs_search": needs_search,
+                "search_query": search_query,
+                "transaction_ids": list(transaction_ids),
+                "top_k": top_k,
+            }
+        ),
+    )
+
     return RetrievalPlan(needs_search=needs_search, search_query=search_query, transaction_ids=tuple(transaction_ids), top_k=top_k)
 
 
 def exact_transaction_lookup(transaction_ids: tuple[str, ...]) -> list[IndexedDocument]:
     if not transaction_ids:
+        logger.debug("exact_transaction_lookup skipped: no transaction ids provided")
         return []
 
     matched_sources: set[str] = set()
     matched_documents: list[IndexedDocument] = []
+    examined_sources = 0
     for transaction_id in transaction_ids:
+        logger.debug("exact_transaction_lookup searching for transaction_id=%s", transaction_id)
         for record in indexed_documents:
+            examined_sources += 1
             if transaction_id in record.transaction_ids or transaction_id in record.raw_text:
                 if record.source not in matched_sources:
                     matched_sources.add(record.source)
                     matched_documents.append(record)
+                    logger.debug("exact_transaction_lookup match=%s", to_json_log(document_log_payload(record)))
+
+    logger.debug(
+        "exact_transaction_lookup_result=%s",
+        to_json_log(
+            {
+                "transaction_ids": list(transaction_ids),
+                "matched_count": len(matched_documents),
+                "matched_sources": [record.source for record in matched_documents],
+                "examined_source_checks": examined_sources,
+            }
+        ),
+    )
     return matched_documents
 
 
 def semantic_lookup(search_query: str, excluded_sources: set[str], limit: int) -> list[IndexedDocument]:
     if not search_query.strip() or limit <= 0:
+        logger.debug(
+            "semantic_lookup skipped=%s",
+            to_json_log({"search_query": search_query, "excluded_sources": sorted(excluded_sources), "limit": limit}),
+        )
         return []
+
+    k_value = min(limit + len(excluded_sources), MAX_SEMANTIC_RESULTS + len(excluded_sources), max(1, len(indexed_documents)))
+    logger.debug(
+        "semantic_lookup_query=%s",
+        to_json_log(
+            {
+                "search_query": search_query,
+                "excluded_sources": sorted(excluded_sources),
+                "limit": limit,
+                "vector_k": k_value,
+            }
+        ),
+    )
 
     try:
         results = vector_store.similarity_search_with_relevance_scores(
             search_query,
-            k=min(limit + len(excluded_sources), MAX_SEMANTIC_RESULTS + len(excluded_sources), max(1, len(indexed_documents))),
+            k=k_value,
         )
     except Exception:
+        logger.exception("semantic_lookup failed")
         return []
+
+    logger.debug(
+        "semantic_lookup_raw_results=%s",
+        to_json_log(
+            [
+                {
+                    "score": score,
+                    "metadata": document.metadata,
+                    "page_content": document.page_content,
+                }
+                for document, score in results
+            ]
+        ),
+    )
 
     semantic_matches: list[IndexedDocument] = []
     seen_sources: set[str] = set(excluded_sources)
@@ -255,6 +362,11 @@ def semantic_lookup(search_query: str, excluded_sources: set[str], limit: int) -
         if len(semantic_matches) >= limit:
             break
 
+    logger.debug(
+        "semantic_lookup_selected=%s",
+        to_json_log([document_log_payload(record) for record in semantic_matches]),
+    )
+
     return semantic_matches
 
 
@@ -262,7 +374,24 @@ def hybrid_retrieve(question: str, conversation_history: list[dict[str, str]]) -
     plan = plan_search(question, conversation_history)
     exact_matches = exact_transaction_lookup(plan.transaction_ids)
 
+    logger.debug(
+        "hybrid_retrieve_after_exact=%s",
+        to_json_log(
+            {
+                "question": question,
+                "plan": {
+                    "needs_search": plan.needs_search,
+                    "search_query": plan.search_query,
+                    "transaction_ids": list(plan.transaction_ids),
+                    "top_k": plan.top_k,
+                },
+                "exact_match_sources": [record.source for record in exact_matches],
+            }
+        ),
+    )
+
     if not plan.needs_search and not exact_matches:
+        logger.debug("hybrid_retrieve returning early with no search and no exact matches")
         return plan, []
 
     semantic_limit = max(0, min(MAX_CONTEXT_DOCS, plan.top_k))
@@ -280,6 +409,17 @@ def hybrid_retrieve(question: str, conversation_history: list[dict[str, str]]) -
         combined.append(record)
         if len(combined) >= MAX_CONTEXT_DOCS:
             break
+
+    logger.debug(
+        "hybrid_retrieve_final=%s",
+        to_json_log(
+            {
+                "question": question,
+                "combined_sources": [record.source for record in combined],
+                "combined_documents": [document_log_payload(record) for record in combined],
+            }
+        ),
+    )
 
     return plan, combined
 
@@ -308,8 +448,10 @@ def delete_collection(chroma_path: str, collection_name: str):
     try:
         chroma_client = PersistentClient(path=chroma_path)
         chroma_client.delete_collection(collection_name)
+        logger.info("deleted collection=%s from path=%s", collection_name, chroma_path)
         print(f"Collection {collection_name} deleted successfully.")
     except Exception as e:
+        logger.exception("failed to delete collection=%s from path=%s", collection_name, chroma_path)
         raise Exception(f"Unable to delete collection: {e}") from e
 
 data_path = Path(__file__).resolve().parent.parent / "data"
@@ -319,19 +461,25 @@ attachments_path = data_path / "attachments"
 loader = DirectoryLoader(str(parsed_json_path), glob="**/*.json", loader_cls=JSONLoader, loader_kwargs={"jq_schema": ".", "text_content": False})  # type: ignore[arg-type]
 
 documents = loader.load()
+logger.info("loaded documents from parsed_json_path=%s count=%d", parsed_json_path, len(documents))
 
 # clear collection before adding documents
 ids = vector_store.get()["ids"]
 if len(ids) > 0:
+    logger.info("clearing existing vector store ids count=%d", len(ids))
     vector_store.delete(ids)
 
 vector_store.add_documents(documents)
+logger.info("added documents to vector store count=%d", len(documents))
 
 indexed_documents = [build_indexed_document(document) for document in documents]
 indexed_documents_by_source = {record.source: record for record in indexed_documents}
+logger.info("built in-memory indexed_documents count=%d", len(indexed_documents))
 
 
 def ask(question: str, conversation_history: list[dict[str, str]]) -> str:
+    logger.info("received question=%s", question)
+    logger.debug("current conversation_history=%s", to_json_log(conversation_history))
     plan, retrieved_documents = hybrid_retrieve(question, conversation_history)
 
     if not retrieved_documents:
@@ -339,11 +487,29 @@ def ask(question: str, conversation_history: list[dict[str, str]]) -> str:
     else:
         context = "\n\n---\n\n".join(format_indexed_document(record) for record in retrieved_documents)
 
+    logger.debug(
+        "final_prompt_context=%s",
+        to_json_log(
+            {
+                "question": question,
+                "plan": {
+                    "needs_search": plan.needs_search,
+                    "search_query": plan.search_query,
+                    "transaction_ids": list(plan.transaction_ids),
+                    "top_k": plan.top_k,
+                },
+                "retrieved_documents": [document_log_payload(record) for record in retrieved_documents],
+                "context": context,
+            }
+        ),
+    )
+
     history_text = format_history(conversation_history)
     messages = answer_prompt.format_messages(history=history_text, question=question, context=context)
     message = ""
     for response in llm.stream(messages):
         message += response.content
+    logger.info("generated answer length=%d", len(message))
     return message
 
 
