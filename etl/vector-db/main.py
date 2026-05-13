@@ -12,7 +12,7 @@ from langchain_community.document_loaders import DirectoryLoader, JSONLoader
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
-load_dotenv("../.env")
+load_dotenv("../../.env")
 OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
 
 MODEL = "gpt-4o-mini"
@@ -292,7 +292,7 @@ def delete_collection(chroma_path: str, collection_name: str):
         raise Exception(f"Unable to delete collection: {e}") from e
 
 
-folder_path = Path(__file__).resolve().parent.parent / "etl" / "data" / "parsed"
+folder_path = Path(__file__).resolve().parent.parent / "data" / "parsed"
 
 loader = DirectoryLoader(str(folder_path), glob="**/*.json", loader_cls=JSONLoader, loader_kwargs={"jq_schema": ".", "text_content": False})  # type: ignore[arg-type]
 
