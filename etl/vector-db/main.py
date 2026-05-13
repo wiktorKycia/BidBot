@@ -291,10 +291,11 @@ def delete_collection(chroma_path: str, collection_name: str):
     except Exception as e:
         raise Exception(f"Unable to delete collection: {e}") from e
 
+data_path = Path(__file__).resolve().parent.parent / "data"
+parsed_json_path = data_path / "parsed"
+attachments_path = data_path / "attachments"
 
-folder_path = Path(__file__).resolve().parent.parent / "data" / "parsed"
-
-loader = DirectoryLoader(str(folder_path), glob="**/*.json", loader_cls=JSONLoader, loader_kwargs={"jq_schema": ".", "text_content": False})  # type: ignore[arg-type]
+loader = DirectoryLoader(str(parsed_json_path), glob="**/*.json", loader_cls=JSONLoader, loader_kwargs={"jq_schema": ".", "text_content": False})  # type: ignore[arg-type]
 
 documents = loader.load()
 
