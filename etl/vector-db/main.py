@@ -57,7 +57,8 @@ prompt = ChatPromptTemplate.from_messages(
             "system",
             """You are a helpful assistant and a literature specialist. Answer all questions to the best of your ability.
         During answering use this context from documents: {context}. If you do not know the answer - do not provide it.
-        Answer as short as possible, preferably in one sentence""",
+        Answer only using the provided context. If the context does not explicitly mention the requested transaction or
+         detail, say that you cannot confirm it.""",
         ),
         ("human", "{input}"),
     ]
@@ -87,7 +88,7 @@ def main():
     while True:
         try:
             contents = input("\nYou: ").strip()
-        except EOFError, KeyboardInterrupt:
+        except (EOFError, KeyboardInterrupt):
             print("\nBye.")
             break
 
