@@ -1,5 +1,14 @@
+import json
 import os
+from pathlib import Path
+
+from chromadb import PersistentClient
 from dotenv import load_dotenv
+from langchain_chroma import Chroma
+from langchain_community.document_loaders import DirectoryLoader, JSONLoader
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnableLambda, RunnablePassthrough
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 load_dotenv("../.env")
 OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
@@ -7,19 +16,12 @@ OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
 MODEL = "gpt-4o-mini"
 MODEL_EMBEDDINGS = "text-embedding-3-large"
 
-from langchain_openai import OpenAIEmbeddings
-from langchain_chroma import Chroma
 
 CHROMA_DB_PATH = "./chroma_langchain_db"
 embeddings = OpenAIEmbeddings(model=MODEL_EMBEDDINGS)
 
-vector_store = Chroma(
-    collection_name="bid_info_json",
-    embedding_function=embeddings,
-    persist_directory=CHROMA_DB_PATH
-)
+vector_store = Chroma(collection_name="bid_info_json", embedding_function=embeddings, persist_directory=CHROMA_DB_PATH)
 
-from chromadb import PersistentClient
 
 def delete_collection(chroma_path: str, collection_name: str):
     try:
@@ -27,17 +29,14 @@ def delete_collection(chroma_path: str, collection_name: str):
         chroma_client.delete_collection(collection_name)
         print(f"Collection {collection_name} deleted successfully.")
     except Exception as e:
-        raise Exception(f"Unable to delete collection: {e}")
+        raise Exception(f"Unable to delete collection: {e}") from e
 
-from langchain_community.document_loaders import JSONLoader, DirectoryLoader
-import json
-from pathlib import Path
 
 folder_path = Path(__file__).resolve().parent.parent / "etl" / "scrapers" / "platformazakupowa2" / "data" / "parsed"
 file_path = "./example_data.json"
 data = json.loads(Path(file_path).read_text())
 
-loader = DirectoryLoader(folder_path, glob="**/*.json", loader_cls=JSONLoader, loader_kwargs = {'jq_schema':'.', 'text_content': False})
+loader = DirectoryLoader(folder_path, glob="**/*.json", loader_cls=JSONLoader, loader_kwargs={"jq_schema": ".", "text_content": False})
 
 # loader = JSONLoader(file_path=file_path, jq_schema='.', text_content=False)
 documents = loader.load()
@@ -49,19 +48,20 @@ if len(ids) > 0:
 
 vector_store.add_documents(documents)
 
-from langchain_core.runnables import RunnablePassthrough, RunnableLambda
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_openai import ChatOpenAI
 
 def format_docs(docs):
     return "\n\n".join(doc.page_content for doc in docs)
 
+
 llm = ChatOpenAI(model=MODEL)
 prompt = ChatPromptTemplate.from_messages(
     [
-        ("system", """You are a helpful assistant and a literature specialist. Answer all questions to the best of your ability.
+        (
+            "system",
+            """You are a helpful assistant and a literature specialist. Answer all questions to the best of your ability.
         During answering use this context from documents: {context}. If you do not know the answer - do not provide it.
-        Answer as short as possible, preferably in one sentence"""),
+        Answer as short as possible, preferably in one sentence""",
+        ),
         ("human", "{input}"),
     ]
 )
@@ -90,7 +90,7 @@ def main():
     while True:
         try:
             contents = input("\nYou: ").strip()
-        except (EOFError, KeyboardInterrupt):
+        except EOFError, KeyboardInterrupt:
             print("\nBye.")
             break
 
