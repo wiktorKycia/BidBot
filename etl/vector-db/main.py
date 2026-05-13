@@ -14,7 +14,7 @@ load_dotenv("../.env")
 OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
 
 MODEL = "gpt-4o-mini"
-MODEL_EMBEDDINGS = "text-embedding-3-large"
+MODEL_EMBEDDINGS = "text-embedding-3-small"
 
 
 CHROMA_DB_PATH = "./chroma_langchain_db"
@@ -32,13 +32,10 @@ def delete_collection(chroma_path: str, collection_name: str):
         raise Exception(f"Unable to delete collection: {e}") from e
 
 
-folder_path = Path(__file__).resolve().parent.parent / "etl" / "scrapers" / "platformazakupowa2" / "data" / "parsed"
-file_path = "./example_data.json"
-data = json.loads(Path(file_path).read_text())
+folder_path = Path(__file__).resolve().parent.parent / "etl" / "data" / "parsed"
 
 loader = DirectoryLoader(folder_path, glob="**/*.json", loader_cls=JSONLoader, loader_kwargs={"jq_schema": ".", "text_content": False})
 
-# loader = JSONLoader(file_path=file_path, jq_schema='.', text_content=False)
 documents = loader.load()
 
 # clear collection before adding documents
