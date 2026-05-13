@@ -47,6 +47,7 @@ class IndexedDocument:
 
 
 def unique_strings(values: list[str]) -> list[str]:
+    """removes duplicates while preserving order. It is used to keep transaction IDs from repeating"""
     seen: set[str] = set()
     ordered: list[str] = []
     for value in values:
@@ -57,6 +58,7 @@ def unique_strings(values: list[str]) -> list[str]:
 
 
 def extract_transaction_ids_from_text(*values: str) -> tuple[str, ...]:
+    """scans one or more text blobs and returns all matching transaction IDs. It is used on the question, history, raw document text, and source metadata"""
     ids: list[str] = []
     for value in values:
         ids.extend(TRANSACTION_ID_PATTERN.findall(value))
@@ -64,6 +66,7 @@ def extract_transaction_ids_from_text(*values: str) -> tuple[str, ...]:
 
 
 def find_first_key_value(payload: Any, candidate_keys: tuple[str, ...]) -> str:
+    """This recursively searches a JSON structure for the first non-empty value under one of the candidate keys. It is a flexible way to discover titles from nested procurement JSON"""
     if isinstance(payload, dict):
         for key in candidate_keys:
             if key in payload and payload[key] not in (None, "", "N/A"):
@@ -81,12 +84,16 @@ def find_first_key_value(payload: Any, candidate_keys: tuple[str, ...]) -> str:
 
 
 def build_indexed_document(document: Any) -> IndexedDocument:
+    """converts a LangChain document into the internal"""
+
+    # try to parse the page content as JSON
     raw_text = document.page_content.strip()
     try:
         payload = json.loads(raw_text)
     except json.JSONDecodeError:
         payload = {}
 
+    # extract a source path from metadata
     source = (
         document.metadata.get("source")
         or document.metadata.get("location")
@@ -94,15 +101,19 @@ def build_indexed_document(document: Any) -> IndexedDocument:
         or document.metadata.get("file_path")
         or "Unknown source"
     )
+
+    # try to infer a human-readable title from JSON keys, and falls back to the first 120 characters of the raw text if no title is found
     title = find_first_key_value(payload, ("transaction_title", "event_title", "title", "name", "subject", "offer_title", "procedure_name"))
     if not title:
         title = raw_text[:120].replace("\n", " ")
 
+    # extract transaction IDs from the document text, the parsed JSON, and the source:
     id_candidates = extract_transaction_ids_from_text(raw_text, json.dumps(payload, ensure_ascii=False), source)
     return IndexedDocument(document=document, source=source, title=title, transaction_ids=id_candidates, raw_text=raw_text)
 
 
 def format_indexed_document(record: IndexedDocument) -> str:
+    """converts one IndexedDocument into readable text for the prompt"""
     lines = [
         f"Source: {record.source}",
         f"Title: {record.title}",
@@ -115,6 +126,7 @@ def format_indexed_document(record: IndexedDocument) -> str:
 
 
 def format_history(conversation_history: list[dict[str, str]], max_turns: int = 6) -> str:
+    """turns the last few chat turns into a compact transcript"""
     recent_turns = conversation_history[-max_turns:]
     if not recent_turns:
         return "No prior conversation."
@@ -126,6 +138,14 @@ def format_history(conversation_history: list[dict[str, str]], max_turns: int = 
 
 
 def plan_search(question: str, conversation_history: list[dict[str, str]]) -> RetrievalPlan:
+    """
+    asks an LLM to produce a JSON plan containing:
+
+    - whether retrieval is needed,
+    - a focused search query,
+    - any transaction IDs,
+    - the desired top_k.
+    """
     history_text = format_history(conversation_history)
     planning_prompt = ChatPromptTemplate.from_messages(
         [
@@ -157,6 +177,7 @@ Rules:
     except Exception:
         payload = {}
 
+    # if a transaction id is present, match it directly against the indexed documents
     detected_ids = extract_transaction_ids_from_text(question, history_text)
     planned_ids = payload.get("transaction_ids", []) if isinstance(payload, dict) else []
     if isinstance(planned_ids, list):
