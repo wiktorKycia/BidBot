@@ -7,13 +7,16 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
 
+from prompts import use_search_system_message_template
+
 from chromadb import PersistentClient
 from chromadb.utils.batch_utils import create_batches
 from dotenv import load_dotenv
 from langchain_chroma import Chroma
 from langchain_community.document_loaders import DirectoryLoader, JSONLoader
+from langchain_community.document_loaders.directory import DirectoryLoader
 from langchain_core.documents import Document
-from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, SystemMessagePromptTemplate
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 load_dotenv("../../.env")
@@ -22,12 +25,14 @@ OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
 MODEL = "gpt-4o-mini"
 MODEL_EMBEDDINGS = "text-embedding-3-small"
 
+FRESH_DATA_RELOAD = True # if set to True, the data will be first deleted, then loaded, for testing purposes
+
+DATA_PATH = Path(__file__).resolve().parent.parent.parent / "data"
+PARSED_JSON_PATH = DATA_PATH / "parsed"
+ATTACHMENTS_PATH = DATA_PATH / "attachments"
 
 CHROMA_DB_PATH = "./chroma_langchain_db"
 LOG_PATH = Path(__file__).resolve().with_name("vector_db.log")
-embeddings = OpenAIEmbeddings(model=MODEL_EMBEDDINGS)
-
-vector_store = Chroma(collection_name="bid_info_json", embedding_function=embeddings, persist_directory=CHROMA_DB_PATH)
 
 MAX_CONTEXT_DOCS = 5
 MAX_SEMANTIC_RESULTS = 4
@@ -186,24 +191,12 @@ def plan_search(question: str, conversation_history: list[dict[str, str]]) -> Re
     history_text = format_history(conversation_history)
     planning_prompt = ChatPromptTemplate.from_messages(
         [
-            (
-                "system",
-                """You create a retrieval plan for a RAG assistant about public procurement offers.
-Return only valid JSON with these keys:
-{"needs_search": true/false, "search_query": "...", "transaction_ids": ["..."], "top_k": 3}
-
-Rules:
-- Prefer exact transaction IDs if the user mentions them explicitly.
-- If the question refers to earlier turns, use the conversation history to infer the likely topic.
-- Make search_query short and focused on the offer title, organization, or subject.
-- If the question is unrelated or only small talk, set needs_search to false, search_query to an empty string, transaction_ids to an empty list, and top_k to 0.
-- top_k should usually be between 1 and 5.
-""",
-            ),
-            (
-                "human",
-                "Conversation history:\n{history}\n\nCurrent question:\n{question}",
-            ),
+            SystemMessagePromptTemplate.from_template(use_search_system_message_template),
+            MessagesPlaceholder(variable_name="conversation")
+            # (
+            #     "human",
+            #     "Conversation history:\n{history}\n\nCurrent question:\n{question}",
+            # ),
         ]
     )
     planner = ChatOpenAI(model=MODEL, temperature=0, max_retries=3, model_kwargs={"response_format": {"type": "json_object"}})
@@ -464,27 +457,7 @@ def add_documents_to_vector_store(documents: list[Document], vector_store: Chrom
         vector_store.add_documents(batch)
 
 
-data_path = Path(__file__).resolve().parent.parent.parent / "data"
-parsed_json_path = data_path / "parsed"
-attachments_path = data_path / "attachments"
 
-loader = DirectoryLoader(str(parsed_json_path), glob="**/*.json", loader_cls=JSONLoader, loader_kwargs={"jq_schema": ".", "text_content": False})  # type: ignore[arg-type]
-
-documents = loader.load()
-logger.info("loaded documents from parsed_json_path=%s count=%d", parsed_json_path, len(documents))
-
-# clear collection before adding documents
-ids = vector_store.get()["ids"]
-if len(ids) > 0:
-    logger.info("clearing existing vector store ids count=%d", len(ids))
-    vector_store.delete(ids)
-
-add_documents_to_vector_store(documents, vector_store)
-logger.info("added documents to vector store count=%d", len(documents))
-
-indexed_documents = [build_indexed_document(document) for document in documents]
-indexed_documents_by_source = {record.source: record for record in indexed_documents}
-logger.info("built in-memory indexed_documents count=%d", len(indexed_documents))
 
 
 def ask(question: str, conversation_history: list[dict[str, str]]) -> str:
@@ -524,6 +497,33 @@ def ask(question: str, conversation_history: list[dict[str, str]]) -> str:
 
 
 def main():
+    embeddings = OpenAIEmbeddings(model=MODEL_EMBEDDINGS)
+
+    vector_store = Chroma(collection_name="bid_info_json", embedding_function=embeddings, persist_directory=CHROMA_DB_PATH)
+
+    loader = DirectoryLoader(
+        str(PARSED_JSON_PATH), glob="**/*.json", loader_cls=JSONLoader,
+        loader_kwargs={ "jq_schema": ".", "text_content": False }
+    )  # type: ignore[arg-type]
+
+    documents = loader.load()
+    logger.info("loaded documents from parsed_json_path=%s count=%d", PARSED_JSON_PATH, len(documents))
+
+    # clear collection before adding documents
+    if FRESH_DATA_RELOAD:
+    ids = vector_store.get()["ids"]
+    if len(ids) > 0:
+        logger.info("clearing existing vector store ids count=%d", len(ids))
+        vector_store.delete(ids)
+
+    add_documents_to_vector_store(documents, vector_store)
+    logger.info("added documents to vector store count=%d", len(documents))
+
+    indexed_documents = [build_indexed_document(document) for document in documents]
+    indexed_documents_by_source = { record.source: record for record in indexed_documents }
+    logger.info("built in-memory indexed_documents count=%d", len(indexed_documents))
+
+
     print("Console RAG chat ready. Type your question, or 'exit' to quit.")
     conversation_history: list[dict[str, str]] = []
     while True:
