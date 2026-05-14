@@ -362,8 +362,6 @@ def hybrid_retrieve(question: str, conversation_history: list[dict[str, str]]) -
             continue
         seen_sources.add(record.source)
         combined.append(record)
-        if len(combined) >= MAX_CONTEXT_DOCS:
-            break
 
     logger.debug(
         "hybrid_retrieve_final=%s",
@@ -377,26 +375,6 @@ def hybrid_retrieve(question: str, conversation_history: list[dict[str, str]]) -
     )
 
     return plan, combined
-
-
-llm = ChatOpenAI(model=MODEL)
-answer_prompt = ChatPromptTemplate.from_messages(
-    [
-        (
-            "system",
-            """You are a helpful assistant focused on procurement offers.
-Answer only with information explicitly supported by the retrieved evidence.
-If the evidence does not explicitly confirm a transaction, ID, or detail, say that you cannot confirm it.
-Do not invent transaction numbers, titles, or organizations.
-Be concise and clear, but include the exact transaction IDs when they are present in the evidence.
-""",
-        ),
-        (
-            "human",
-            "Conversation history:\n{history}\n\nUser question:\n{question}\n\nRetrieved evidence:\n{context}",
-        ),
-    ]
-)
 
 
 def delete_collection(chroma_path: str, collection_name: str):
@@ -482,6 +460,25 @@ def main():
 
 if __name__ == "__main__":
     logger = configure_logger()
+
+    llm = ChatOpenAI(model=MODEL)
+    answer_prompt = ChatPromptTemplate.from_messages(
+        [
+            (
+                "system",
+                """You are a helpful assistant focused on procurement offers.
+    Answer only with information explicitly supported by the retrieved evidence.
+    If the evidence does not explicitly confirm a transaction, ID, or detail, say that you cannot confirm it.
+    Do not invent transaction numbers, titles, or organizations.
+    Be concise and clear, but include the exact transaction IDs when they are present in the evidence.
+    """,
+            ),
+            (
+                "human",
+                "Conversation history:\n{history}\n\nUser question:\n{question}\n\nRetrieved evidence:\n{context}",
+            ),
+        ]
+    )
 
     embeddings = OpenAIEmbeddings(model=MODEL_EMBEDDINGS)
 
