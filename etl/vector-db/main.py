@@ -58,17 +58,9 @@ def configure_logger() -> logging.Logger:
 logger = configure_logger()
 
 
-def to_json_log(payload: Any) -> str:
-    return json.dumps(payload, ensure_ascii=False, default=str, indent=2)
-
-
-def document_log_payload(record: Any) -> dict[str, Any]:
-    return {
-        "source": record.source,
-        "title": record.title,
-        "transaction_ids": list(record.transaction_ids),
-        "raw_text": record.raw_text,
-    }
+class LLMReturnedFaultyDataFormatError(Exception):
+    """Raised when the llm returns unexpected data format"""
+    pass
 
 
 @dataclass(frozen=True)
@@ -87,6 +79,18 @@ class IndexedDocument:
     transaction_ids: tuple[str, ...]
     raw_text: str
 
+
+def to_json_log(payload: Any) -> str:
+    return json.dumps(payload, ensure_ascii=False, default=str, indent=2)
+
+
+def document_log_payload(record: Any) -> dict[str, Any]:
+    return {
+        "source": record.source,
+        "title": record.title,
+        "transaction_ids": list(record.transaction_ids),
+        "raw_text": record.raw_text,
+    }
 
 def unique_strings(values: list[str]) -> list[str]:
     """removes duplicates while preserving order. It is used to keep transaction IDs from repeating"""
@@ -191,11 +195,10 @@ def plan_search(question: str, conversation_history: list[dict[str, str]]) -> Re
     planning_prompt = ChatPromptTemplate.from_messages(
         [
             SystemMessagePromptTemplate.from_template(use_search_system_message_template),
-            MessagesPlaceholder(variable_name="conversation"),
-            # (
-            #     "human",
-            #     "Conversation history:\n{history}\n\nCurrent question:\n{question}",
-            # ),
+            (
+                "human",
+                "Conversation history:\n{history}\n\nCurrent question:\n{question}",
+            ),
         ]
     )
     planner = ChatOpenAI(model=MODEL, temperature=0, max_retries=3, model_kwargs={"response_format": {"type": "json_object"}})
@@ -203,40 +206,41 @@ def plan_search(question: str, conversation_history: list[dict[str, str]]) -> Re
     try:
         response = planner.invoke(planning_prompt.format_messages(history=history_text, question=question)).content.strip()
         payload = json.loads(response)
-    except Exception:
-        payload = {}
+    except (AttributeError, json.JSONDecodeError, TypeError) as e:
+        logger.error(f"Wrong response type from planner: {e}")
+        raise
+    except KeyError as e:
+        logger.error(f"The prompt formatting failed due to missing `history` or `question` variables: {e}")
+        raise
 
-    logger.debug(
-        "retrieval_plan_input=%s",
-        to_json_log(
-            {
-                "question": question,
-                "conversation_history": conversation_history,
-                "history_text": history_text,
-            }
-        ),
-    )
+
     logger.debug("retrieval_plan_raw_output=%s", to_json_log(payload))
+    if (not isinstance(payload, dict)
+            or "transaction_ids" not in payload
+            or "search_query" not in payload
+            or "needs_search" not in payload
+            or "top_k" not in payload):
+        logger.error("The planner llm did not return the correct data format!")
+        raise LLMReturnedFaultyDataFormatError("The planner llm did not return the correct data format!")
 
     # if a transaction id is present, match it directly against the indexed documents
-    detected_ids = extract_transaction_ids_from_text(question, history_text)
-    planned_ids = payload.get("transaction_ids", []) if isinstance(payload, dict) else []
-    planned_ids = [str(item) for item in planned_ids if str(item).strip()] if isinstance(planned_ids, list) else []
+    detected_ids = extract_transaction_ids_from_text(question, format_history(conversation_history, 2))
+    planned_ids = payload.get("transaction_ids", [])
+    planned_ids = [str(item) for item in planned_ids if str(item).strip()]
 
     transaction_ids = unique_strings(list(detected_ids) + planned_ids)
-    search_query = str(payload.get("search_query", "")).strip() if isinstance(payload, dict) else ""
+    search_query = str(payload.get("search_query", "")).strip()
     if not search_query:
         search_query = question.strip()
 
-    needs_search = bool(payload.get("needs_search", True)) if isinstance(payload, dict) else True
-    top_k = payload.get("top_k", 3) if isinstance(payload, dict) else 3
+    needs_search = bool(payload.get("needs_search", True))
+    top_k = payload.get("top_k", 3)
     if not isinstance(top_k, int) or top_k < 0:
         top_k = 3
     top_k = min(top_k, MAX_CONTEXT_DOCS)
 
     if transaction_ids:
         needs_search = True
-        top_k = max(top_k, min(3, MAX_CONTEXT_DOCS))
 
     logger.debug(
         "retrieval_plan_final=%s",
