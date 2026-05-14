@@ -470,23 +470,31 @@ if __name__ == "__main__":
         collection_name="bid_info_json", embedding_function=embeddings, persist_directory=CHROMA_DB_PATH
     )
 
-    loader = DirectoryLoader(
-        str(PARSED_JSON_PATH), glob="**/*.json", loader_cls=JSONLoader,
-        loader_kwargs={ "jq_schema": ".", "text_content": False }
-    )  # type: ignore[arg-type]
+    existing_data = vector_store.get()
+    existing_ids = existing_data["ids"]
 
-    documents = loader.load()
-    logger.info("loaded documents from parsed_json_path=%s count=%d", PARSED_JSON_PATH, len(documents))
+    documents = []
 
-    # clear collection before adding documents
-    if FRESH_DATA_RELOAD:
-        ids = vector_store.get()["ids"]
-        if len(ids) > 0:
-            logger.info("clearing existing vector store ids count=%d", len(ids))
-            vector_store.delete(ids)
+    if FRESH_DATA_RELOAD or len(existing_ids) == 0:
+        loader = DirectoryLoader(
+            str(PARSED_JSON_PATH), glob="**/*.json", loader_cls=JSONLoader,
+            loader_kwargs={ "jq_schema": ".", "text_content": False }
+        )  # type: ignore[arg-type]
 
-    add_documents_to_vector_store(documents, vector_store)
-    logger.info("added documents to vector store count=%d", len(documents))
+        documents = loader.load()
+        logger.info("loaded documents from parsed_json_path=%s count=%d", PARSED_JSON_PATH, len(documents))
+
+        # clear collection before adding documents
+        if len(existing_ids) > 0:
+            logger.info("clearing existing vector store ids count=%d", len(existing_ids))
+            vector_store.delete(existing_ids)
+
+        add_documents_to_vector_store(documents, vector_store)
+        logger.info("added documents to vector store count=%d", len(documents))
+    else:
+        logger.info("loading documents from vector store count=%d", len(existing_ids))
+        for doc, meta in zip(existing_data["documents"], existing_data["metadatas"]):
+            documents.append(Document(page_content=doc, metadata=meta))
 
     indexed_documents: list[IndexedDocument] = [build_indexed_document(document) for document in documents]
     indexed_documents_by_source: dict[str, IndexedDocument] = { record.source: record for record in indexed_documents }
