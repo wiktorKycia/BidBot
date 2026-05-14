@@ -158,54 +158,63 @@ async def download_file(
         "downloaded": False,
     }
 
-    async with semaphore, session.get(url) as response:
-        response.raise_for_status()
+    async with semaphore:
+        domain = urlparse(url).netloc
+        if "ted.europa.eu" in domain:
+            await asyncio.sleep(2.0)
+        elif "platformazakupowa.pl" in domain:
+            await asyncio.sleep(1.0)
+        else:
+            await asyncio.sleep(0.5)
 
-        content_type = response.headers.get("Content-Type", "").lower()
-        if "text/html" in content_type:
-            logger.warning(f"Ominięto plik, ponieważ URL zwraca stronę HTML: {url}")
-            metadata["downloaded"] = False
-            return metadata
+        async with session.get(url) as response:
+            response.raise_for_status()
 
-        cd_header = response.headers.get("Content-Disposition")
-        if cd_header:
-            msg = email.message.Message()
-            msg["Content-Disposition"] = cd_header
-            cd_filename = msg.get_filename()
-            if cd_filename:
-                filename = cd_filename
+            content_type = response.headers.get("Content-Type", "").lower()
+            if "text/html" in content_type:
+                logger.warning(f"Ominięto plik, ponieważ URL zwraca stronę HTML: {url}")
+                metadata["downloaded"] = False
+                return metadata
+
+            cd_header = response.headers.get("Content-Disposition")
+            if cd_header:
+                msg = email.message.Message()
+                msg["Content-Disposition"] = cd_header
+                cd_filename = msg.get_filename()
+                if cd_filename:
+                    filename = cd_filename
+                    filepath = save_dir / filename
+
+            if "." not in filename:
+                content_type = response.headers.get("Content-Type", "")
+                ext = mimetypes.guess_extension(content_type) or ".bin"
+                filename += ext
                 filepath = save_dir / filename
 
-        if "." not in filename:
-            content_type = response.headers.get("Content-Type", "")
-            ext = mimetypes.guess_extension(content_type) or ".bin"
-            filename += ext
-            filepath = save_dir / filename
+            metadata["filename"] = filename
+            metadata["local_path"] = str(filepath.relative_to(BASE_DIR))
 
-        metadata["filename"] = filename
-        metadata["local_path"] = str(filepath.relative_to(BASE_DIR))
+            if filepath.exists():
+                metadata["size_bytes"] = filepath.stat().st_size
+                metadata["downloaded"] = True
+                return metadata
 
-        if filepath.exists():
-            metadata["size_bytes"] = filepath.stat().st_size
+            temp_filepath = filepath.with_suffix(".tmp")
+            size = 0
+
+            async with aiofiles.open(temp_filepath, mode="wb") as f:
+                async for chunk in response.content.iter_chunked(64 * 1024):
+                    if chunk:
+                        await f.write(chunk)
+                        size += len(chunk)
+
+            temp_filepath.rename(filepath)
+
+            metadata["size_bytes"] = size
             metadata["downloaded"] = True
+            logger.info(f"Pobrano plik: {filename} ({size} bytes)")
+
             return metadata
-
-        temp_filepath = filepath.with_suffix(".tmp")
-        size = 0
-
-        async with aiofiles.open(temp_filepath, mode="wb") as f:
-            async for chunk in response.content.iter_chunked(64 * 1024):
-                if chunk:
-                    await f.write(chunk)
-                    size += len(chunk)
-
-        temp_filepath.rename(filepath)
-
-        metadata["size_bytes"] = size
-        metadata["downloaded"] = True
-        logger.info(f"Pobrano plik: {filename} ({size} bytes)")
-
-        return metadata
 
 
 async def check_page_exists(session: aiohttp.ClientSession, page: int) -> bool:
@@ -294,7 +303,7 @@ async def process_single_notice(
     valid_link_keywords = [".pdf", ".zip", ".7z", ".rar", ".doc", ".docx", ".xls", ".xlsx", "download", "file", "viewer"]
 
     for a_tag in doc.find_all("a", href=True):
-        href = str(a_tag["href"])
+        href = str(a_tag.get("href", ""))
         href_lower = href.lower()
 
         if any(ext in href_lower for ext in valid_link_keywords):
@@ -316,11 +325,63 @@ async def process_single_notice(
             elif res and res.get("downloaded"):
                 valid_attachments_metadata.append(res)
 
+    formatted_attachments = []
+    for att in valid_attachments_metadata:
+        filename = att.get("filename", "")
+        formatted_attachments.append(
+            {
+                "url": att.get("url"),
+                "filename": filename,
+                "local_path": att.get("local_path"),
+                "downloaded": att.get("downloaded", False),
+                "is_zip": filename.lower().endswith(".zip"),
+                "extracted_status": None,
+            }
+        )
+
+    raw_cpvs = item.get("cpvCodes") or item.get("cpvs") or []
+    cpv_codes = [str(c.get("code", c)) if isinstance(c, dict) else str(c) for c in raw_cpvs]
+
+    raw_buyers = item.get("buyers") or item.get("contractingAuthorities") or item.get("issuers") or []
+    if not raw_buyers and item.get("companyName"):
+        raw_buyers = [item]
+
+    issuers = []
+    for buyer in raw_buyers:
+        if not buyer:
+            continue
+        address_info = buyer.get("address") or {}
+
+        issuers.append(
+            {
+                "title": buyer.get("name") or buyer.get("companyName") or item.get("companyName") or buyer.get("title"),
+                "address": {
+                    "street": address_info.get("street") or buyer.get("street"),
+                    "city": address_info.get("city") or buyer.get("city") or item.get("locality"),
+                    "postalCode": address_info.get("postalCode") or buyer.get("postalCode") or buyer.get("zipCode"),
+                    "country": address_info.get("country") or buyer.get("country"),
+                },
+            }
+        )
+
     parsed_data = {
-        **item,
-        "scraper_source_url": original_url,
-        "scraper_clean_description": clean_description[:2000],
-        "scraper_attachments": valid_attachments_metadata,
+        "id": notice_id,
+        "enrichment": {
+            "tags": item.get("tags") or item.get("enrichment", {}).get("tags") or [],
+            "industry": item.get("industry") or item.get("enrichment", {}).get("industry"),
+            "nuts3": item.get("nuts3") or item.get("enrichment", {}).get("nuts3") or [],
+        },
+        "createdAt": item.get("createdAt"),
+        "publicationDate": item.get("publicationDate"),
+        "submittingOffersDeadline": item.get("submittingOffersDeadline") or item.get("submitting_offers_deadline"),
+        "cpvCodes": [c for c in cpv_codes if c],
+        "issuers": issuers,
+        "title": item.get("title"),
+        "description": clean_description,
+        "referenceNumber": item.get("referenceNumber") or item.get("signature"),
+        "contractNature": item.get("orderType") or item.get("contractNature"),
+        "scraper_url": original_url,
+        "scraper_attachments": formatted_attachments,
     }
 
     return parsed_data
@@ -418,8 +479,8 @@ async def main():
     connector = TCPConnector(resolver=resolver)
     timeout = aiohttp.ClientTimeout(total=60)
 
-    html_semaphore = asyncio.Semaphore(2)
-    file_semaphore = asyncio.Semaphore(10)
+    html_semaphore = asyncio.Semaphore(1)
+    file_semaphore = asyncio.Semaphore(1)
 
     total_downloaded = 0
 
