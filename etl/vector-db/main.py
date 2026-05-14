@@ -15,6 +15,8 @@ from langchain_community.document_loaders.directory import DirectoryLoader
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, SystemMessagePromptTemplate
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_core.chat_history import BaseChatMessageHistory, InMemoryChatMessageHistory
+from langchain_core.runnables.history import RunnableWithMessageHistory
 from prompts import use_search_system_message_template
 
 load_dotenv("../../.env")
@@ -491,17 +493,18 @@ def main():
 
     vector_store = Chroma(collection_name="bid_info_json", embedding_function=embeddings, persist_directory=CHROMA_DB_PATH)
 
+    loader = DirectoryLoader(
+        str(PARSED_JSON_PATH), glob="**/*.json", loader_cls=JSONLoader,
+        loader_kwargs={ "jq_schema": ".", "text_content": False }
+    )  # type: ignore[arg-type]
+
+    documents = loader.load()
+    print(documents[0].metadata)
+    print(documents[0].page_content)
+    logger.info("loaded documents from parsed_json_path=%s count=%d", PARSED_JSON_PATH, len(documents))
+
     # clear collection before adding documents
     if FRESH_DATA_RELOAD:
-        loader = DirectoryLoader(
-            str(PARSED_JSON_PATH), glob="**/*.json", loader_cls=JSONLoader, loader_kwargs={"jq_schema": ".", "text_content": False}
-        )  # type: ignore[arg-type]
-
-        documents = loader.load()
-        print(documents[0].metadata)
-        print(documents[0].page_content)
-        logger.info("loaded documents from parsed_json_path=%s count=%d", PARSED_JSON_PATH, len(documents))
-
         ids = vector_store.get()["ids"]
         if len(ids) > 0:
             logger.info("clearing existing vector store ids count=%d", len(ids))
@@ -510,9 +513,9 @@ def main():
         add_documents_to_vector_store(documents, vector_store)
         logger.info("added documents to vector store count=%d", len(documents))
 
-        indexed_documents = [build_indexed_document(document) for document in documents]
-        indexed_documents_by_source = {record.source: record for record in indexed_documents}
-        logger.info("built in-memory indexed_documents count=%d", len(indexed_documents))
+    indexed_documents = [build_indexed_document(document) for document in documents]
+    indexed_documents_by_source = {record.source: record for record in indexed_documents}
+    logger.info("built in-memory indexed_documents count=%d", len(indexed_documents))
 
     print("Console RAG chat ready. Type your question, or 'exit' to quit.")
     conversation_history: list[dict[str, str]] = []
