@@ -9,3 +9,4 @@ etl/data
 data
 /logs
 /etl/scrapers/platformazakupowa/logs
+/etl/scrapers/platformaofertowa/logs

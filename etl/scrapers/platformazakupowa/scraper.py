@@ -46,11 +46,13 @@ ORDER_TYPE_DICT = {
 
 class DownloadIntegrityError(Exception):
     """Błąd rzucany, gdy rozmiar pliku nie zgadza się z nagłówkiem Content-Length."""
+
     pass
 
 
 class HTMLEmptyError(Exception):
     """Błąd rzucany, gdy zwracany html jest pusty"""
+
     pass
 
 
@@ -94,14 +96,13 @@ async def download_file(session: aiohttp.ClientSession, url: str, target_dir: Pa
         "Sec-Fetch-Mode": "navigate",
         "Sec-Fetch-Site": "same-origin",
         "Sec-Fetch-User": "?1",
-        "Referer": referer_url  # Dynamiczny referer wskazujący na stronę przetargu!
+        "Referer": referer_url,
     }
 
     async with semaphore:
         await asyncio.sleep(random.uniform(2.0, 4.0))
 
         try:
-            # Dodajemy nagłówki do konkretnego żądania pobrania
             async with session.get(url, headers=headers, timeout=60) as response:
                 response.raise_for_status()
                 content_length = int(response.headers.get("Content-Length", 0))
@@ -307,6 +308,7 @@ def safe_extract_zip(zip_path: Path, extract_dir: Path) -> bool:
     except Exception as e:
         logger.error(f"ZIP {zip_path.name}: Nieoczekiwany błąd dekompresji: {e}")
         return False
+
 
 async def process_page(session: aiohttp.ClientSession, page_number: int, semaphore: asyncio.Semaphore) -> int:
     logger.info(f"Strona {page_number}...")
