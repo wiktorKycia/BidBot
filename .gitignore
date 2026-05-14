@@ -10,3 +10,4 @@ data
 /logs
 /etl/scrapers/platformazakupowa/logs
 /etl/scrapers/platformaofertowa/logs
+/etl/scrapers/ezamowienia/logs

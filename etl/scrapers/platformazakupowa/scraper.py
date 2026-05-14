@@ -183,6 +183,7 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
     organisation: str | None = None
     publication_date_dt: datetime | None = None
     order_type: str | None = None
+    reference_number: str | None = None
 
     li_items = notice_doc.find_all("li", class_="proceeding-info-list-item")
     for li in li_items:
@@ -201,7 +202,7 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
             if len(texts) > 1:
                 order_type = " ".join(texts[1:]).strip()
                 if order_type in ORDER_TYPE_DICT:
-                    order_type = ORDER_TYPE_DICT[order_type]  # zamiana na liczbę mnogą
+                    order_type = ORDER_TYPE_DICT[order_type]
                 else:
                     logger.warning(f"Nieznany rodzaj zamówienia: {order_type}, dostępne rodzaje: {' '.join(ORDER_TYPE_DICT.keys())}")
 
@@ -215,6 +216,11 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
                     publication_date_dt: datetime = parsed_dt.replace(tzinfo=ZoneInfo("Europe/Warsaw")).astimezone(UTC)
                 except ValueError:
                     logger.warning("Błąd parsowania daty publikacji: %r", raw_date)
+
+        elif "Numer" in label_text or "Znak" in label_text:
+            texts = list(li.stripped_strings)
+            if len(texts) > 1:
+                reference_number = " ".join(texts[1:]).strip()
 
     attachments_list = []
     table = notice_doc.find("table", {"id": "allAttachmentsTable"})
@@ -271,6 +277,7 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
         "publication_date_dt": publication_date_dt,
         "description": desc,
         "order_type": order_type,
+        "reference_number": reference_number,
         "raw_html": notice_doc.prettify(),
         "attachments": attachments_list,
     }
@@ -352,16 +359,37 @@ async def process_page(session: aiohttp.ClientSession, page_number: int, semapho
         if details.get("publication_date_dt"):
             pub_date = details["publication_date_dt"].isoformat()
 
+        formatted_attachments = []
+        for att in details.get("attachments", []):
+            formatted_attachments.append(
+                {
+                    "url": att.get("url"),
+                    "filename": att.get("filename"),
+                    "local_path": att.get("local_path"),
+                    "downloaded": att.get("downloaded", False),
+                    "is_zip": att.get("is_zip", False),
+                    "extracted_status": att.get("extracted_status"),
+                }
+            )
+
+        issuers = []
+        if details.get("client_name"):
+            issuers.append({"title": details.get("client_name"), "address": {"street": None, "city": None, "postalCode": None, "country": None}})
+
         parsed_data = {
             "id": notice_id,
-            "url": notice_url,
+            "enrichment": {"tags": [], "industry": None, "nuts3": []},
+            "createdAt": None,
+            "publicationDate": pub_date,
+            "submittingOffersDeadline": deadline_dt.isoformat(),
+            "cpvCodes": [],
+            "issuers": issuers,
             "title": a_tag.text.strip(),
-            "publication_date": pub_date,
-            "submitting_offers_date": deadline_dt.isoformat(),
-            "client_name": details.get("client_name"),
-            "order_type": details.get("order_type"),
             "description": details.get("description"),
-            "attachments": details.get("attachments"),
+            "referenceNumber": details.get("reference_number"),
+            "contractNature": details.get("order_type"),
+            "scraper_url": notice_url,
+            "scraper_attachments": formatted_attachments,
         }
 
         await save_to_file(RAW_DIR / f"{notice_id}.html", details["raw_html"])
