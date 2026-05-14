@@ -32,7 +32,7 @@ vector_store = Chroma(collection_name="bid_info_json", embedding_function=embedd
 MAX_CONTEXT_DOCS = 5
 MAX_SEMANTIC_RESULTS = 4
 MAX_CHROMA_BATCH = 5461
-TRANSACTION_ID_PATTERN = re.compile(r"\b\d{6,}\b")
+TRANSACTION_ID_PATTERN = re.compile(r"\b(?:\d{6,}|[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12})\b")
 
 
 def configure_logger() -> logging.Logger:
