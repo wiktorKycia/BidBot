@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
+from operator import itemgetter
 
 from chromadb import PersistentClient
 from dotenv import load_dotenv
@@ -73,7 +74,7 @@ class IndexedDocument:
     document: Any
     source: str
     title: str
-    transaction_ids: tuple[str, ...]
+    transaction_id: str
     raw_text: str
 
 
@@ -128,6 +129,17 @@ def find_first_key_value(payload: Any, candidate_keys: tuple[str, ...]) -> str:
     return ""
 
 
+def get_document_source(document: Document) -> str:
+    # source = ( # left here commented, because on linux in file's metadata the path is called "source", but I don't know how is it on Windows or Mac
+    #     document.metadata.get("source")
+    #     or document.metadata.get("location")
+    #     or document.metadata.get("path")
+    #     or document.metadata.get("file_path")
+    #     or "Unknown source"
+    # )
+
+    return document.metadata["source"]
+
 def build_indexed_document(document: Document) -> IndexedDocument:
     """converts a LangChain document into the internal"""
 
@@ -139,19 +151,9 @@ def build_indexed_document(document: Document) -> IndexedDocument:
         payload = {}
 
     # extract a source path from metadata
-    source = (
-        document.metadata.get("source")
-        or document.metadata.get("location")
-        or document.metadata.get("path")
-        or document.metadata.get("file_path")
-        or "Unknown source"
-    )
+    source = get_document_source(document)
 
-    title = payload["title"]
-
-    # extract transaction IDs from the document text, the parsed JSON, and the source:
-    id_candidates = extract_transaction_ids_from_text(raw_text, json.dumps(payload, ensure_ascii=False), source)
-    return IndexedDocument(document=document, source=source, title=title, transaction_ids=id_candidates, raw_text=raw_text)
+    return IndexedDocument(document=document, source=source, title=payload["title"], transaction_id=payload["id"], raw_text=raw_text)
 
 
 def format_indexed_document(record: IndexedDocument) -> str:
@@ -160,8 +162,8 @@ def format_indexed_document(record: IndexedDocument) -> str:
         f"Source: {record.source}",
         f"Title: {record.title}",
     ]
-    if record.transaction_ids:
-        lines.append(f"Transaction IDs: {', '.join(record.transaction_ids)}")
+    if record.transaction_id:
+        lines.append(f"Transaction ID: {record.transaction_id}")
     lines.append("Content:")
     lines.append(record.raw_text)
     return "\n".join(lines)
@@ -266,7 +268,7 @@ def exact_transaction_lookup(transaction_ids: tuple[str, ...]) -> list[IndexedDo
         logger.debug("exact_transaction_lookup searching for transaction_id=%s", transaction_id)
         for record in indexed_documents:
             examined_sources += 1
-            if (transaction_id in record.transaction_ids or transaction_id in record.raw_text) and record.source not in matched_sources:
+            if transaction_id == record.transaction_id and record.source not in matched_sources:
                 matched_sources.add(record.source)
                 matched_documents.append(record)
                 logger.debug("exact_transaction_lookup match=%s", to_json_log(document_log_payload(record)))
@@ -285,23 +287,20 @@ def exact_transaction_lookup(transaction_ids: tuple[str, ...]) -> list[IndexedDo
     return matched_documents
 
 
-def semantic_lookup(search_query: str, excluded_sources: set[str], limit: int) -> list[IndexedDocument]:
+def semantic_lookup(search_query: str,limit: int) -> list[IndexedDocument]:
     if not search_query.strip() or limit <= 0:
         logger.debug(
             "semantic_lookup skipped=%s",
-            to_json_log({"search_query": search_query, "excluded_sources": sorted(excluded_sources), "limit": limit}),
+            to_json_log({"search_query": search_query, "limit": limit}),
         )
         return []
 
-    k_value = min(limit + len(excluded_sources), MAX_SEMANTIC_RESULTS + len(excluded_sources), max(1, len(indexed_documents)))
     logger.debug(
         "semantic_lookup_query=%s",
         to_json_log(
             {
                 "search_query": search_query,
-                "excluded_sources": sorted(excluded_sources),
                 "limit": limit,
-                "vector_k": k_value,
             }
         ),
     )
@@ -309,11 +308,13 @@ def semantic_lookup(search_query: str, excluded_sources: set[str], limit: int) -
     try:
         results = vector_store.similarity_search_with_relevance_scores(
             search_query,
-            k=k_value,
+            k=limit,
         )
     except Exception:
         logger.exception("semantic_lookup failed")
         return []
+
+    results.sort(key=itemgetter(1), reverse=True) # itemgetter(1) is the same as: lambda x: x[1], but faster
 
     logger.debug(
         "semantic_lookup_raw_results=%s",
@@ -329,30 +330,7 @@ def semantic_lookup(search_query: str, excluded_sources: set[str], limit: int) -
         ),
     )
 
-    semantic_matches: list[IndexedDocument] = []
-    seen_sources: set[str] = set(excluded_sources)
-    for document, _score in results:
-        source = (
-            document.metadata.get("source")
-            or document.metadata.get("location")
-            or document.metadata.get("path")
-            or document.metadata.get("file_path")
-            or "Unknown source"
-        )
-        if source in seen_sources:
-            continue
-        seen_sources.add(source)
-        indexed_record = indexed_documents_by_source.get(source)
-        if indexed_record is not None:
-            semantic_matches.append(indexed_record)
-        else:
-            raw_text = document.page_content.strip()
-            title = raw_text[:120].replace("\n", " ")
-            ids = extract_transaction_ids_from_text(raw_text, source)
-            semantic_matches.append(IndexedDocument(document=document, source=source, title=title, transaction_ids=ids, raw_text=raw_text))
-
-        if len(semantic_matches) >= limit:
-            break
+    semantic_matches: list[IndexedDocument] = [build_indexed_document(document) for document, _ in results[:limit]]
 
     logger.debug(
         "semantic_lookup_selected=%s",
@@ -369,31 +347,13 @@ def hybrid_retrieve(question: str, conversation_history: list[dict[str, str]]) -
         raise # propagate plan errors further
     exact_matches = exact_transaction_lookup(plan.transaction_ids)
 
-    logger.debug(
-        "hybrid_retrieve_after_exact=%s",
-        to_json_log(
-            {
-                "question": question,
-                "plan": {
-                    "needs_search": plan.needs_search,
-                    "search_query": plan.search_query,
-                    "transaction_ids": list(plan.transaction_ids),
-                    "top_k": plan.top_k,
-                },
-                "exact_match_sources": [record.source for record in exact_matches],
-            }
-        ),
-    )
-
     if not plan.needs_search and not exact_matches:
         logger.debug("hybrid_retrieve returning early with no search and no exact matches")
         return plan, []
 
-    semantic_limit = max(0, min(MAX_CONTEXT_DOCS, plan.top_k))
-    if exact_matches:
-        semantic_limit = max(0, semantic_limit - len(exact_matches))
+    semantic_limit = plan.top_k if not exact_matches else len(exact_matches)
 
-    semantic_matches = semantic_lookup(plan.search_query, {record.source for record in exact_matches}, semantic_limit)
+    semantic_matches = semantic_lookup(plan.search_query, semantic_limit)
 
     combined: list[IndexedDocument] = []
     seen_sources: set[str] = set()
@@ -553,4 +513,4 @@ if __name__ == "__main__":
     indexed_documents_by_source: dict[str, IndexedDocument] = { record.source: record for record in indexed_documents }
     logger.info("built in-memory indexed_documents count=%d", len(indexed_documents))
 
-    # main()
+    main()
