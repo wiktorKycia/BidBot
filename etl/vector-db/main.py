@@ -7,17 +7,15 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
 
-from prompts import use_search_system_message_template
-
 from chromadb import PersistentClient
-from chromadb.utils.batch_utils import create_batches
 from dotenv import load_dotenv
 from langchain_chroma import Chroma
-from langchain_community.document_loaders import DirectoryLoader, JSONLoader
+from langchain_community.document_loaders import JSONLoader
 from langchain_community.document_loaders.directory import DirectoryLoader
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, SystemMessagePromptTemplate
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from prompts import use_search_system_message_template
 
 load_dotenv("../../.env")
 OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
@@ -25,7 +23,7 @@ OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
 MODEL = "gpt-4o-mini"
 MODEL_EMBEDDINGS = "text-embedding-3-small"
 
-FRESH_DATA_RELOAD = True # if set to True, the data will be first deleted, then loaded, for testing purposes
+FRESH_DATA_RELOAD = True  # if set to True, the data will be first deleted, then loaded, for testing purposes
 
 DATA_PATH = Path(__file__).resolve().parent.parent.parent / "data"
 PARSED_JSON_PATH = DATA_PATH / "parsed"
@@ -100,7 +98,8 @@ def unique_strings(values: list[str]) -> list[str]:
 
 
 def extract_transaction_ids_from_text(*values: str) -> tuple[str, ...]:
-    """scans one or more text blobs and returns all matching transaction IDs. It is used on the question, history, raw document text, and source metadata"""
+    """scans one or more text blobs and returns all matching transaction IDs. It is used on the question, history, raw document text
+    and source metadata"""
     ids: list[str] = []
     for value in values:
         ids.extend(TRANSACTION_ID_PATTERN.findall(value))
@@ -108,7 +107,8 @@ def extract_transaction_ids_from_text(*values: str) -> tuple[str, ...]:
 
 
 def find_first_key_value(payload: Any, candidate_keys: tuple[str, ...]) -> str:
-    """This recursively searches a JSON structure for the first non-empty value under one of the candidate keys. It is a flexible way to discover titles from nested procurement JSON"""
+    """This recursively searches a JSON structure for the first non-empty value under one of the candidate keys.
+    It is a flexible way to discover titles from nested procurement JSON"""
     if isinstance(payload, dict):
         for key in candidate_keys:
             if key in payload and payload[key] not in (None, "", "N/A"):
@@ -125,7 +125,7 @@ def find_first_key_value(payload: Any, candidate_keys: tuple[str, ...]) -> str:
     return ""
 
 
-def build_indexed_document(document: Any) -> IndexedDocument:
+def build_indexed_document(document: Document) -> IndexedDocument:
     """converts a LangChain document into the internal"""
 
     # try to parse the page content as JSON
@@ -144,10 +144,7 @@ def build_indexed_document(document: Any) -> IndexedDocument:
         or "Unknown source"
     )
 
-    # try to infer a human-readable title from JSON keys, and falls back to the first 120 characters of the raw text if no title is found
-    title = find_first_key_value(payload, ("transaction_title", "event_title", "title", "name", "subject", "offer_title", "procedure_name"))
-    if not title:
-        title = raw_text[:120].replace("\n", " ")
+    title = payload["title"]
 
     # extract transaction IDs from the document text, the parsed JSON, and the source:
     id_candidates = extract_transaction_ids_from_text(raw_text, json.dumps(payload, ensure_ascii=False), source)
@@ -192,7 +189,7 @@ def plan_search(question: str, conversation_history: list[dict[str, str]]) -> Re
     planning_prompt = ChatPromptTemplate.from_messages(
         [
             SystemMessagePromptTemplate.from_template(use_search_system_message_template),
-            MessagesPlaceholder(variable_name="conversation")
+            MessagesPlaceholder(variable_name="conversation"),
             # (
             #     "human",
             #     "Conversation history:\n{history}\n\nCurrent question:\n{question}",
@@ -222,10 +219,7 @@ def plan_search(question: str, conversation_history: list[dict[str, str]]) -> Re
     # if a transaction id is present, match it directly against the indexed documents
     detected_ids = extract_transaction_ids_from_text(question, history_text)
     planned_ids = payload.get("transaction_ids", []) if isinstance(payload, dict) else []
-    if isinstance(planned_ids, list):
-        planned_ids = [str(item) for item in planned_ids if str(item).strip()]
-    else:
-        planned_ids = []
+    planned_ids = [str(item) for item in planned_ids if str(item).strip()] if isinstance(planned_ids, list) else []
 
     transaction_ids = unique_strings(list(detected_ids) + planned_ids)
     search_query = str(payload.get("search_query", "")).strip() if isinstance(payload, dict) else ""
@@ -269,11 +263,10 @@ def exact_transaction_lookup(transaction_ids: tuple[str, ...]) -> list[IndexedDo
         logger.debug("exact_transaction_lookup searching for transaction_id=%s", transaction_id)
         for record in indexed_documents:
             examined_sources += 1
-            if transaction_id in record.transaction_ids or transaction_id in record.raw_text:
-                if record.source not in matched_sources:
-                    matched_sources.add(record.source)
-                    matched_documents.append(record)
-                    logger.debug("exact_transaction_lookup match=%s", to_json_log(document_log_payload(record)))
+            if (transaction_id in record.transaction_ids or transaction_id in record.raw_text) and record.source not in matched_sources:
+                matched_sources.add(record.source)
+                matched_documents.append(record)
+                logger.debug("exact_transaction_lookup match=%s", to_json_log(document_log_payload(record)))
 
     logger.debug(
         "exact_transaction_lookup_result=%s",
@@ -453,11 +446,8 @@ def delete_collection(chroma_path: str, collection_name: str):
 
 def add_documents_to_vector_store(documents: list[Document], vector_store: Chroma):
     for i in range(0, len(documents), MAX_CHROMA_BATCH):
-        batch = documents[i:i+MAX_CHROMA_BATCH]
+        batch = documents[i : i + MAX_CHROMA_BATCH]
         vector_store.add_documents(batch)
-
-
-
 
 
 def ask(question: str, conversation_history: list[dict[str, str]]) -> str:
@@ -501,35 +491,35 @@ def main():
 
     vector_store = Chroma(collection_name="bid_info_json", embedding_function=embeddings, persist_directory=CHROMA_DB_PATH)
 
-    loader = DirectoryLoader(
-        str(PARSED_JSON_PATH), glob="**/*.json", loader_cls=JSONLoader,
-        loader_kwargs={ "jq_schema": ".", "text_content": False }
-    )  # type: ignore[arg-type]
-
-    documents = loader.load()
-    logger.info("loaded documents from parsed_json_path=%s count=%d", PARSED_JSON_PATH, len(documents))
-
     # clear collection before adding documents
     if FRESH_DATA_RELOAD:
-    ids = vector_store.get()["ids"]
-    if len(ids) > 0:
-        logger.info("clearing existing vector store ids count=%d", len(ids))
-        vector_store.delete(ids)
+        loader = DirectoryLoader(
+            str(PARSED_JSON_PATH), glob="**/*.json", loader_cls=JSONLoader, loader_kwargs={"jq_schema": ".", "text_content": False}
+        )  # type: ignore[arg-type]
 
-    add_documents_to_vector_store(documents, vector_store)
-    logger.info("added documents to vector store count=%d", len(documents))
+        documents = loader.load()
+        print(documents[0].metadata)
+        print(documents[0].page_content)
+        logger.info("loaded documents from parsed_json_path=%s count=%d", PARSED_JSON_PATH, len(documents))
 
-    indexed_documents = [build_indexed_document(document) for document in documents]
-    indexed_documents_by_source = { record.source: record for record in indexed_documents }
-    logger.info("built in-memory indexed_documents count=%d", len(indexed_documents))
+        ids = vector_store.get()["ids"]
+        if len(ids) > 0:
+            logger.info("clearing existing vector store ids count=%d", len(ids))
+            vector_store.delete(ids)
 
+        add_documents_to_vector_store(documents, vector_store)
+        logger.info("added documents to vector store count=%d", len(documents))
+
+        indexed_documents = [build_indexed_document(document) for document in documents]
+        indexed_documents_by_source = {record.source: record for record in indexed_documents}
+        logger.info("built in-memory indexed_documents count=%d", len(indexed_documents))
 
     print("Console RAG chat ready. Type your question, or 'exit' to quit.")
     conversation_history: list[dict[str, str]] = []
     while True:
         try:
             contents = input("\nYou: ").strip()
-        except (EOFError, KeyboardInterrupt):
+        except EOFError, KeyboardInterrupt:
             print("\nBye.")
             break
 
