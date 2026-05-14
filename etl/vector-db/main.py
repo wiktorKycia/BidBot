@@ -53,7 +53,7 @@ class LLMReturnedFaultyDataFormatError(Exception):
 class RetrievalPlan:
     needs_search: bool
     search_query: str
-    transaction_id: str
+    transaction_ids: tuple[str, ...]
     top_k: int
 
 
@@ -89,7 +89,7 @@ def document_log_payload(record: Any) -> dict[str, Any]:
     return {
         "source": record.source,
         "title": record.title,
-        "transaction_ids": list(record.transaction_ids),
+        "transaction_id": list(record.transaction_id),
         "raw_text": record.raw_text,
     }
 
@@ -329,7 +329,7 @@ def hybrid_retrieve(question: str, conversation_history: list[dict[str, str]]) -
         plan = plan_search(question, conversation_history)
     except AttributeError, json.JSONDecodeError, TypeError, KeyError, LLMReturnedFaultyDataFormatError, Exception:
         raise # propagate plan errors further
-    exact_matches = exact_transaction_lookup(plan.transaction_id)
+    exact_matches = exact_transaction_lookup(plan.transaction_ids)
 
     if not plan.needs_search and not exact_matches:
         logger.debug("hybrid_retrieve returning early with no search and no exact matches")
@@ -476,8 +476,6 @@ if __name__ == "__main__":
     )  # type: ignore[arg-type]
 
     documents = loader.load()
-    print(documents[0].metadata)
-    print(documents[0].page_content)
     logger.info("loaded documents from parsed_json_path=%s count=%d", PARSED_JSON_PATH, len(documents))
 
     # clear collection before adding documents
