@@ -55,9 +55,6 @@ def configure_logger() -> logging.Logger:
     return logger
 
 
-logger = configure_logger()
-
-
 class LLMReturnedFaultyDataFormatError(Exception):
     """Raised when the llm returns unexpected data format"""
     pass
@@ -366,7 +363,10 @@ def semantic_lookup(search_query: str, excluded_sources: set[str], limit: int) -
 
 
 def hybrid_retrieve(question: str, conversation_history: list[dict[str, str]]) -> tuple[RetrievalPlan, list[IndexedDocument]]:
-    plan = plan_search(question, conversation_history)
+    try:
+        plan = plan_search(question, conversation_history)
+    except AttributeError, json.JSONDecodeError, TypeError, KeyError, LLMReturnedFaultyDataFormatError, Exception:
+        raise # propagate plan errors further
     exact_matches = exact_transaction_lookup(plan.transaction_ids)
 
     logger.debug(
@@ -459,7 +459,10 @@ def add_documents_to_vector_store(documents: list[Document], vector_store: Chrom
 def ask(question: str, conversation_history: list[dict[str, str]]) -> str:
     logger.info("received question=%s", question)
     logger.debug("current conversation_history=%s", to_json_log(conversation_history))
-    plan, retrieved_documents = hybrid_retrieve(question, conversation_history)
+    try:
+        plan, retrieved_documents = hybrid_retrieve(question, conversation_history)
+    except Exception:
+        raise # propagate the error further
 
     if not retrieved_documents:
         context = "No relevant evidence was retrieved from the document store."
@@ -493,34 +496,6 @@ def ask(question: str, conversation_history: list[dict[str, str]]) -> str:
 
 
 def main():
-    embeddings = OpenAIEmbeddings(model=MODEL_EMBEDDINGS)
-
-    vector_store = Chroma(collection_name="bid_info_json", embedding_function=embeddings, persist_directory=CHROMA_DB_PATH)
-
-    loader = DirectoryLoader(
-        str(PARSED_JSON_PATH), glob="**/*.json", loader_cls=JSONLoader,
-        loader_kwargs={ "jq_schema": ".", "text_content": False }
-    )  # type: ignore[arg-type]
-
-    documents = loader.load()
-    print(documents[0].metadata)
-    print(documents[0].page_content)
-    logger.info("loaded documents from parsed_json_path=%s count=%d", PARSED_JSON_PATH, len(documents))
-
-    # clear collection before adding documents
-    if FRESH_DATA_RELOAD:
-        ids = vector_store.get()["ids"]
-        if len(ids) > 0:
-            logger.info("clearing existing vector store ids count=%d", len(ids))
-            vector_store.delete(ids)
-
-        add_documents_to_vector_store(documents, vector_store)
-        logger.info("added documents to vector store count=%d", len(documents))
-
-    indexed_documents = [build_indexed_document(document) for document in documents]
-    indexed_documents_by_source = {record.source: record for record in indexed_documents}
-    logger.info("built in-memory indexed_documents count=%d", len(indexed_documents))
-
     print("Console RAG chat ready. Type your question, or 'exit' to quit.")
     conversation_history: list[dict[str, str]] = []
     while True:
@@ -542,7 +517,40 @@ def main():
             conversation_history.append({"user": contents, "assistant": answer})
         except Exception as e:
             print(f"Error: {e}")
+            break
 
 
 if __name__ == "__main__":
-    main()
+    logger = configure_logger()
+
+    embeddings = OpenAIEmbeddings(model=MODEL_EMBEDDINGS)
+
+    vector_store = Chroma(
+        collection_name="bid_info_json", embedding_function=embeddings, persist_directory=CHROMA_DB_PATH
+    )
+
+    loader = DirectoryLoader(
+        str(PARSED_JSON_PATH), glob="**/*.json", loader_cls=JSONLoader,
+        loader_kwargs={ "jq_schema": ".", "text_content": False }
+    )  # type: ignore[arg-type]
+
+    documents = loader.load()
+    print(documents[0].metadata)
+    print(documents[0].page_content)
+    logger.info("loaded documents from parsed_json_path=%s count=%d", PARSED_JSON_PATH, len(documents))
+
+    # clear collection before adding documents
+    if FRESH_DATA_RELOAD:
+        ids = vector_store.get()["ids"]
+        if len(ids) > 0:
+            logger.info("clearing existing vector store ids count=%d", len(ids))
+            vector_store.delete(ids)
+
+    add_documents_to_vector_store(documents, vector_store)
+    logger.info("added documents to vector store count=%d", len(documents))
+
+    indexed_documents: list[IndexedDocument] = [build_indexed_document(document) for document in documents]
+    indexed_documents_by_source: dict[str, IndexedDocument] = { record.source: record for record in indexed_documents }
+    logger.info("built in-memory indexed_documents count=%d", len(indexed_documents))
+
+    # main()
