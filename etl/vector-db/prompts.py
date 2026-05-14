@@ -30,7 +30,6 @@ Your goal is to determine if such data is needed, and if so, how many results ar
 6. If any conflict arises in the rules, prioritize accurate data retrieval and compliance with the JSON format
 7. Prefer exact transaction IDs if the user mentions them explicitly, if not leave the list empty
 8. If the question is unrelated or only small talk, set needs_search to false, search_query to an empty string, transaction_ids to an empty list, and top_k to 0.
-9. Keep an eye on today's date if needed. Here it is: {today_date}
 </rules>
 
 <examples>

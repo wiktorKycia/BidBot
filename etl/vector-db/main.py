@@ -41,6 +41,31 @@ MAX_CHROMA_BATCH = 5461
 TRANSACTION_ID_PATTERN = re.compile(r"\b(?:\d{6,}|[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12})\b")
 
 
+
+
+
+class LLMReturnedFaultyDataFormatError(Exception):
+    """Raised when the llm returns unexpected data format"""
+    pass
+
+
+@dataclass(frozen=True)
+class RetrievalPlan:
+    needs_search: bool
+    search_query: str
+    transaction_id: str
+    top_k: int
+
+
+@dataclass(frozen=True)
+class IndexedDocument:
+    document: Any
+    source: str
+    title: str
+    transaction_id: str
+    raw_text: str
+
+
 def configure_logger() -> logging.Logger:
     logger = logging.getLogger("bidbot.vector_db")
     if logger.handlers:
@@ -54,28 +79,6 @@ def configure_logger() -> logging.Logger:
     handler.setFormatter(logging.Formatter("%(asctime)s | %(levelname)s | %(message)s"))
     logger.addHandler(handler)
     return logger
-
-
-class LLMReturnedFaultyDataFormatError(Exception):
-    """Raised when the llm returns unexpected data format"""
-    pass
-
-
-@dataclass(frozen=True)
-class RetrievalPlan:
-    needs_search: bool
-    search_query: str
-    transaction_ids: tuple[str, ...]
-    top_k: int
-
-
-@dataclass(frozen=True)
-class IndexedDocument:
-    document: Any
-    source: str
-    title: str
-    transaction_id: str
-    raw_text: str
 
 
 def to_json_log(payload: Any) -> str:
@@ -108,25 +111,6 @@ def extract_transaction_ids_from_text(*values: str) -> tuple[str, ...]:
     for value in values:
         ids.extend(TRANSACTION_ID_PATTERN.findall(value))
     return tuple(unique_strings(ids))
-
-
-def find_first_key_value(payload: Any, candidate_keys: tuple[str, ...]) -> str:
-    """This recursively searches a JSON structure for the first non-empty value under one of the candidate keys.
-    It is a flexible way to discover titles from nested procurement JSON"""
-    if isinstance(payload, dict):
-        for key in candidate_keys:
-            if key in payload and payload[key] not in (None, "", "N/A"):
-                return str(payload[key])
-        for value in payload.values():
-            found = find_first_key_value(value, candidate_keys)
-            if found:
-                return found
-    elif isinstance(payload, list):
-        for item in payload:
-            found = find_first_key_value(item, candidate_keys)
-            if found:
-                return found
-    return ""
 
 
 def get_document_source(document: Document) -> str:
@@ -345,7 +329,7 @@ def hybrid_retrieve(question: str, conversation_history: list[dict[str, str]]) -
         plan = plan_search(question, conversation_history)
     except AttributeError, json.JSONDecodeError, TypeError, KeyError, LLMReturnedFaultyDataFormatError, Exception:
         raise # propagate plan errors further
-    exact_matches = exact_transaction_lookup(plan.transaction_ids)
+    exact_matches = exact_transaction_lookup(plan.transaction_id)
 
     if not plan.needs_search and not exact_matches:
         logger.debug("hybrid_retrieve returning early with no search and no exact matches")
