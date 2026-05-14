@@ -89,8 +89,8 @@ def document_log_payload(record: Any) -> dict[str, Any]:
     return {
         "source": record.source,
         "title": record.title,
-        "transaction_id": list(record.transaction_id),
-        "raw_text": record.raw_text,
+        "transaction_id": record.transaction_id,
+        # "raw_text": record.raw_text,
     }
 
 def unique_strings(values: list[str]) -> list[str]:
@@ -403,7 +403,7 @@ def ask(question: str, conversation_history: list[dict[str, str]]) -> str:
                     "top_k": plan.top_k,
                 },
                 "retrieved_documents": [document_log_payload(record) for record in retrieved_documents],
-                "context": context,
+                # "context": context,
             }
         ),
     )
