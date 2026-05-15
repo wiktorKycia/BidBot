@@ -135,7 +135,8 @@ def build_indexed_document(document: Document) -> IndexedDocument:
         payload = {}
 
     # extract a source path from metadata
-    source = get_document_source(document)
+    # source = get_document_source(document)
+    source = payload.get("scraper_url", None)
 
     return IndexedDocument(document=document, source=source, title=payload["title"], transaction_id=payload["id"], raw_text=raw_text)
 
