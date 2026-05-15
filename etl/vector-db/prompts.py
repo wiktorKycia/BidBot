@@ -52,7 +52,7 @@ top_k to 0.
    "top_k": 5}}
 3. User: "Powiedz mi więcej o transakcjach z numerami 1305774 i 1302369"
    AI: {{"needs_search": true, "search_query": "transakcje o id 1305774 lub o id 1302369", "transaction_ids": ["1305774", "1302369"], "top_k": 2}}
-4. User: "I need to see transactions with the integration and expansion of IT systems and the delivery of ERP/HIS systems for hospitals
+4. User: "I need to see transactions with the integration and expansion of IT systems and the delivery of ERP/HIS systems for hospitals"
    AI: {{"needs_search": true,
    "search_query": "integracja, rozwój i wdrożenie informatycznych systemów ERP/HIS dla szpitali, klinik i innych placówek medycznych",
    "transaction_ids": [], "top_k": 4}}
