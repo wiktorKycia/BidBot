@@ -483,7 +483,7 @@ if __name__ == "__main__":
         logger.info("added documents to vector store count=%d", len(documents))
     else:
         logger.info("loading documents from vector store count=%d", len(existing_ids))
-        for doc, meta in zip(existing_data["documents"], existing_data["metadatas"]):
+        for doc, meta in zip(existing_data["documents"], existing_data["metadatas"], strict=True):
             documents.append(Document(page_content=doc, metadata=meta))
 
     indexed_documents: list[IndexedDocument] = [build_indexed_document(document) for document in documents]
