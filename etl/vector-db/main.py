@@ -348,17 +348,19 @@ def hybrid_retrieve(question: str, conversation_history: list[dict[str, str]]) -
         logger.debug("hybrid_retrieve returning early with no search and no exact matches")
         return plan, []
 
-    semantic_limit = plan.top_k if not exact_matches else len(exact_matches)
-
-    semantic_matches = semantic_lookup(plan.search_query, semantic_limit)
+    semantic_matches = semantic_lookup(plan.search_query, plan.top_k)
 
     combined: list[IndexedDocument] = []
     seen_sources: set[str] = set()
-    for record in [*exact_matches, *semantic_matches]:
+    remaining = max(plan.top_k - len(exact_matches), 0)
+    for i, record in enumerate([*exact_matches, *semantic_matches]):
         if record.source in seen_sources:
             continue
         seen_sources.add(record.source)
         combined.append(record)
+
+        if i >= remaining:
+            break
 
     logger.debug(
         "hybrid_retrieve_final=%s",
