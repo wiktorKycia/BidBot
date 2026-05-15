@@ -416,7 +416,7 @@ def ask(question: str, conversation_history: list[dict[str, str]]) -> str:
                     "top_k": plan.top_k,
                 },
                 "retrieved_documents": [document_log_payload(record) for record in retrieved_documents],
-                # "context": context,
+                "context": context,
             }
         ),
     )
