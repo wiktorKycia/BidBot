@@ -287,7 +287,9 @@ async def process_single_notice(
     notice_id = str(item.get("id"))
     original_url = extract_best_url(item)
 
+    attachment_links = set()
     raw_html = ""
+    fetch_failed = False
     try:
         raw_html = await fetch_html(session, original_url, html_semaphore)
     except Exception as e:
@@ -295,22 +297,25 @@ async def process_single_notice(
         logger.error(f"ID ogłoszenia: {notice_id}")
         logger.error(f"Nie udało się pobrać strony ogłoszenia {original_url}: {e!r}")
         logger.error("=========================")
+        fetch_failed = True
 
-    await save_to_file(RAW_DIR / f"{notice_id}.html", raw_html)
+    if not fetch_failed:
+        await save_to_file(RAW_DIR / f"{notice_id}.html", raw_html)
 
-    doc = BeautifulSoup(raw_html, "lxml")
-    clean_description = doc.get_text(separator="\n", strip=True)
+        doc = BeautifulSoup(raw_html, "lxml")
+        clean_description = doc.get_text(separator="\n", strip=True)
 
-    attachment_links = set()
-    valid_link_keywords = [".pdf", ".zip", ".7z", ".rar", ".doc", ".docx", ".xls", ".xlsx", "download", "file", "viewer"]
+        valid_link_keywords = [".pdf", ".zip", ".7z", ".rar", ".doc", ".docx", ".xls", ".xlsx", "download", "file", "viewer"]
 
-    for a_tag in doc.find_all("a", href=True):
-        href = str(a_tag.get("href", ""))
-        href_lower = href.lower()
+        for a_tag in doc.find_all("a", href=True):
+            href = str(a_tag.get("href", ""))
+            href_lower = href.lower()
 
-        if any(ext in href_lower for ext in valid_link_keywords):
-            full_link = urljoin(original_url, href)
-            attachment_links.add(full_link)
+            if any(ext in href_lower for ext in valid_link_keywords):
+                full_link = urljoin(original_url, href)
+                attachment_links.add(full_link)
+    else:
+        clean_description = item.get("description") or ""
 
     tender_attachments_dir = ATTACHMENTS_DIR / notice_id
     if attachment_links:
