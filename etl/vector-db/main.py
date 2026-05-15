@@ -33,7 +33,7 @@ def require_openai_api_key() -> str:
     return api_key
 
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_API_KEY = require_openai_api_key()
 
 MODEL = "gpt-4o-mini"
 MODEL_EMBEDDINGS = "text-embedding-3-small"
