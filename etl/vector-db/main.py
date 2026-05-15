@@ -4,9 +4,9 @@ import os
 import re
 from dataclasses import dataclass
 from logging.handlers import RotatingFileHandler
+from operator import itemgetter
 from pathlib import Path
 from typing import Any
-from operator import itemgetter
 
 from chromadb import PersistentClient
 from dotenv import load_dotenv
@@ -14,11 +14,9 @@ from langchain_chroma import Chroma
 from langchain_community.document_loaders import JSONLoader
 from langchain_community.document_loaders.directory import DirectoryLoader
 from langchain_core.documents import Document
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, SystemMessagePromptTemplate
+from langchain_core.prompts import ChatPromptTemplate, SystemMessagePromptTemplate
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-from langchain_core.chat_history import BaseChatMessageHistory, InMemoryChatMessageHistory
-from langchain_core.runnables.history import RunnableWithMessageHistory
-from prompts import use_search_system_message_template, main_system_message_template
+from prompts import main_system_message_template, use_search_system_message_template
 
 load_dotenv("../../.env")
 OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
@@ -41,11 +39,9 @@ MAX_CHROMA_BATCH = 5461
 TRANSACTION_ID_PATTERN = re.compile(r"\b(?:\d{6,}|[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12})\b")
 
 
-
-
-
 class LLMReturnedFaultyDataFormatError(Exception):
     """Raised when the llm returns unexpected data format"""
+
     pass
 
 
@@ -60,7 +56,7 @@ class RetrievalPlan:
 @dataclass(frozen=True)
 class IndexedDocument:
     document: Any
-    source: str # file absolute filepath to .json document
+    source: str  # file absolute filepath to .json document
     title: str
     transaction_id: str
     raw_text: str
@@ -93,6 +89,7 @@ def document_log_payload(record: Any) -> dict[str, Any]:
         # "raw_text": record.raw_text,
     }
 
+
 def unique_strings(values: list[str]) -> list[str]:
     """removes duplicates while preserving order. It is used to keep transaction IDs from repeating"""
     seen: set[str] = set()
@@ -124,6 +121,7 @@ def get_document_source(document: Document) -> str:
 
     return document.metadata["source"]
 
+
 def build_indexed_document(document: Document) -> IndexedDocument:
     """converts a LangChain document into the internal"""
 
@@ -136,7 +134,7 @@ def build_indexed_document(document: Document) -> IndexedDocument:
 
     # extract a source path from metadata
     # source = get_document_source(document)
-    source = payload.get("scraper_url", None)
+    source = payload.get("scraper_url")
 
     return IndexedDocument(document=document, source=source, title=payload["title"], transaction_id=payload["id"], raw_text=raw_text)
 
@@ -197,13 +195,14 @@ def plan_search(question: str, conversation_history: list[dict[str, str]]) -> Re
         logger.error(f"The prompt formatting failed due to missing `history` or `question` variables: {e}")
         raise
 
-
     logger.debug("retrieval_plan_raw_output=%s", to_json_log(payload))
-    if (not isinstance(payload, dict)
-            or "transaction_ids" not in payload
-            or "search_query" not in payload
-            or "needs_search" not in payload
-            or "top_k" not in payload):
+    if (
+        not isinstance(payload, dict)
+        or "transaction_ids" not in payload
+        or "search_query" not in payload
+        or "needs_search" not in payload
+        or "top_k" not in payload
+    ):
         logger.error("The planner llm did not return the correct data format!")
         raise LLMReturnedFaultyDataFormatError("The planner llm did not return the correct data format!")
 
@@ -272,7 +271,7 @@ def exact_transaction_lookup(transaction_ids: tuple[str, ...]) -> list[IndexedDo
     return matched_documents
 
 
-def semantic_lookup(search_query: str,limit: int) -> list[IndexedDocument]:
+def semantic_lookup(search_query: str, limit: int) -> list[IndexedDocument]:
     if not search_query.strip() or limit <= 0:
         logger.debug(
             "semantic_lookup skipped=%s",
@@ -299,7 +298,7 @@ def semantic_lookup(search_query: str,limit: int) -> list[IndexedDocument]:
         logger.exception("semantic_lookup failed")
         return []
 
-    results.sort(key=itemgetter(1), reverse=True) # itemgetter(1) is the same as: lambda x: x[1], but faster
+    results.sort(key=itemgetter(1), reverse=True)  # itemgetter(1) is the same as: lambda x: x[1], but faster
 
     logger.debug(
         "semantic_lookup_raw_results=%s",
@@ -329,7 +328,7 @@ def hybrid_retrieve(question: str, conversation_history: list[dict[str, str]]) -
     try:
         plan = plan_search(question, conversation_history)
     except AttributeError, json.JSONDecodeError, TypeError, KeyError, LLMReturnedFaultyDataFormatError, Exception:
-        raise # propagate plan errors further
+        raise  # propagate plan errors further
     exact_matches = exact_transaction_lookup(plan.transaction_ids)
 
     if not plan.needs_search and not exact_matches:
@@ -385,7 +384,7 @@ def ask(question: str, conversation_history: list[dict[str, str]]) -> str:
     try:
         plan, retrieved_documents = hybrid_retrieve(question, conversation_history)
     except Exception:
-        raise # propagate the error further
+        raise  # propagate the error further
 
     if not retrieved_documents:
         context = "No relevant evidence was retrieved from the document store."
@@ -460,9 +459,7 @@ if __name__ == "__main__":
 
     embeddings = OpenAIEmbeddings(model=MODEL_EMBEDDINGS)
 
-    vector_store = Chroma(
-        collection_name="bid_info_json", embedding_function=embeddings, persist_directory=CHROMA_DB_PATH
-    )
+    vector_store = Chroma(collection_name="bid_info_json", embedding_function=embeddings, persist_directory=CHROMA_DB_PATH)
 
     existing_data = vector_store.get()
     existing_ids = existing_data["ids"]
@@ -471,8 +468,7 @@ if __name__ == "__main__":
 
     if FRESH_DATA_RELOAD or len(existing_ids) == 0:
         loader = DirectoryLoader(
-            str(PARSED_JSON_PATH), glob="**/*.json", loader_cls=JSONLoader,
-            loader_kwargs={ "jq_schema": ".", "text_content": False }
+            str(PARSED_JSON_PATH), glob="**/*.json", loader_cls=JSONLoader, loader_kwargs={"jq_schema": ".", "text_content": False}
         )  # type: ignore[arg-type]
 
         documents = loader.load()
@@ -491,7 +487,7 @@ if __name__ == "__main__":
             documents.append(Document(page_content=doc, metadata=meta))
 
     indexed_documents: list[IndexedDocument] = [build_indexed_document(document) for document in documents]
-    indexed_documents_by_source: dict[str, IndexedDocument] = { record.source: record for record in indexed_documents }
+    indexed_documents_by_source: dict[str, IndexedDocument] = {record.source: record for record in indexed_documents}
     logger.info("built in-memory indexed_documents count=%d", len(indexed_documents))
 
     main()
