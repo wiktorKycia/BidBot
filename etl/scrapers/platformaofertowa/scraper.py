@@ -288,11 +288,10 @@ async def process_single_notice(
     item: dict,
     html_semaphore: asyncio.Semaphore,
     file_semaphore: asyncio.Semaphore,
-) -> dict:
+) -> dict | None:
     notice_id = str(item.get("id"))
     original_url = extract_best_url(item)
 
-    raw_html = ""
     try:
         raw_html = await fetch_html(session, original_url, html_semaphore)
     except Exception as e:
@@ -300,6 +299,7 @@ async def process_single_notice(
         logger.error(f"ID ogłoszenia: {notice_id}")
         logger.error(f"Nie udało się pobrać strony ogłoszenia {original_url}: {e!r}")
         logger.error("=========================")
+        return None
 
     await save_to_file(RAW_DIR / f"{notice_id}.html", raw_html)
 
