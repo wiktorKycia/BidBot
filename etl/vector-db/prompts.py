@@ -99,17 +99,17 @@ Retrieved evidence: {context}
 1.
 User: tell me about some of the public open offers about IT
 Context: "Source: https://platformazakupowa.pl/transakcja/1307263\nTitle: Integracja i rozbudowa systemów informatycznych – sprzęt IT i oprogramowanie
- systemowe\nTransaction ID: 191760a6-8f86-5380-aeea-571c1dbdb39d\nContent:\n{\"id\": \"191760a6-8f86-5380-aeea-571c1dbdb39d\", \"enrichment\": {\"tags
+ systemowe\nTransaction ID: 191760a6-8f86-5380-aeea-571c1dbdb39d\nContent:\n{{\"id\": \"191760a6-8f86-5380-aeea-571c1dbdb39d\", \"enrichment\": {{\"tags
  \": [\"systemy informatyczne\", \"sprz\\u0119t komputerowy\", \"oprogramowanie systemowe\", \"integracja system\\u00f3w\"], \"industry\": \"uslugi_in
- formatyczne\", \"nuts3\": [\"PL636\"]}, \"createdAt\": \"2026-05-11T06:00:05+00:00\", \"publicationDate\": \"2026-05-11T07:11:00+02:00\", \"submittin
+ formatyczne\", \"nuts3\": [\"PL636\"]}}, \"createdAt\": \"2026-05-11T06:00:05+00:00\", \"publicationDate\": \"2026-05-11T07:11:00+02:00\", \"submittin
  gOffersDeadline\": \"2026-05-26T10:30:00+02:00\", \"cpvCodes\": [\"48820000\", \"30233000\", \"32420000\", \"48000000\", \"72263000\", \"72250000\"],
-  \"issuers\": [{\"title\": \"Samodzielny Publiczny Specjalistyczny Zak\\u0142ad Opieki Zdrowotnej w L\\u0119borku\", \"address\": {\"street\": \"ul.
-  Juliana W\\u0119grzynowicza 13\", \"city\": \"L\\u0119bork\", \"postalCode\": \"84-300\", \"country\": null}}], \"title\": \"Integracja i rozbudowa
+  \"issuers\": [{{\"title\": \"Samodzielny Publiczny Specjalistyczny Zak\\u0142ad Opieki Zdrowotnej w L\\u0119borku\", \"address\": {{\"street\": \"ul.
+  Juliana W\\u0119grzynowicza 13\", \"city\": \"L\\u0119bork\", \"postalCode\": \"84-300\", \"country\": null}}}}], \"title\": \"Integracja i rozbudowa
   system\\u00f3w informatycznych \\u2013 sprz\\u0119t IT i oprogramowanie systemowe\", \"description\": \"Post\\u0119powanie: Integracja i rozbudowa
-  system\\u00f3w informatycznych \\u2013 sprz\\u0119t IT i oprogramowanie systemowe\\n     - Platforma Zakupowa\\n@{ appsTranslations[resolvedActiveAp
-  plication] }\\nZa\\u0142\\u00f3\\u017c profil wykonawcy\\nZaloguj si\\u0119\\nZaloguj si\\u0119\\nZamknij\\nWykonawca\\nZamawiaj\\u0105cy\\nPowr
+  system\\u00f3w informatycznych \\u2013 sprz\\u0119t IT i oprogramowanie systemowe\\n     - Platforma Zakupowa\\n@{{ appsTranslations[resolvedActiveAp
+  plication] }}\\nZa\\u0142\\u00f3\\u017c profil wykonawcy\\nZaloguj si\\u0119\\nZaloguj si\\u0119\\nZamknij\\nWykonawca\\nZamawiaj\\u0105cy\\nPowr
   \\u00f3t do wyboru\\nLogowanie jako zamawiaj\\u0105cy\\nZamknij\\nPodaj adres e-mail\\nPodaj has\\u0142o\\nZaloguj si\\u0119\\nNie pami\\u0119tasz
-  has\\u0142a?\\n@{ tab.tooltip }\\nTa strona korzysta z plik\\u00f3w cookies\\nO plikach cookie\\nU\\u017cywamy plik\\u00f3w cookies, aby zapewni
+  has\\u0142a?\\n@{{ tab.tooltip }}\\nTa strona korzysta z plik\\u00f3w cookies\\nO plikach cookie\\nU\\u017cywamy plik\\u00f3w cookies, aby zapewni
   \\u0107 prawid\\u0142owe dzia\\u0142anie serwisu oraz \\u2013 za Twoj\\u0105 zgod\\u0105 \\u2013 do cel\\u00f3w analitycznych. Wykorzystujemy w tym
   zakresie rozwi\\u0105zania naszych partner\\u00f3w: Google i Meta. Mo\\u017cesz zaakceptowa\\u0107 wszystkie pliki cookies, odrzuci\\u0107 wszystkie
    poza niezb\\u0119dnymi albo wybra\\u0107 szczeg\\u00f3\\u0142owe ustawienia\\nPolityce prywatno\\u015bci\\nNiezb\\u0119dne pliki cookies
@@ -224,17 +224,17 @@ wiadomo\\u015bci oznacza
 akceptacj\\u0119\\nregulaminu\\noperatora\\nplatformazakupowa.pl\\n.\\nZamknij\\nWy\\u015blij\\n\\u00d7\\nZa\\u0142\\u0105czniki\\nZatwierd\\u017a
 pliki\\nStrona g\\u0142\\u00f3wna\\nUstawienia cookies\\nRegulamin\\nPolityka prywatno\\u015bci\\nInstrukcje\\nFAQ\\nKontakt\", \"referenceNumber\":
 \"ZP.PN.261.14.26\", \"contractNature\": \"supplies\", \"scraper_url\": \"https://platformazakupowa.pl/transakcja/1307263\", \"scraper_attachments\":
-[]}\n\n---\n\nSource: https://platformazakupowa.pl/transakcja/1308144\nTitle: Zapytanie ofertowe na wykonanie strony internetowej dla ZZOZ w
-Wadowicach\nTransaction ID: c9c1830b-3f78-58ec-9360-f23ae46ae231\nContent:\n{\"id\": \"c9c1830b-3f78-58ec-9360-f23ae46ae231\", \"enrichment\":
-{\"tags\": [\"tworzenie stron internetowych\", \"projektowanie stron\", \"oprogramowanie internetowe\"], \"industry\": \"uslugi_informatyczne\",
-\"nuts3\": [\"PL21A\"]}, \"createdAt\": \"2026-05-14T05:39:39+00:00\", \"publicationDate\": \"2026-05-08T14:19:00+02:00\",
-\"submittingOffersDeadline\": \"2026-05-18T10:00:00+02:00\", \"cpvCodes\": [], \"issuers\": [{\"title\": \"Zesp\\u00f3\\u0142 Zak\\u0142ad\\u00f3w
-Opieki Zdrowotnej w Wadowicach\", \"address\": {\"street\": \"ul. Karmelicka 5\", \"city\": \"Wadowice\", \"postalCode\": \"34-100\", \"country\":
-null}}], \"title\": \"Zapytanie ofertowe na wykonanie strony internetowej dla ZZOZ w Wadowicach\", \"description\": \"Post\\u0119powanie: Zapytanie
-ofertowe na wykonanie strony internetowej dla ZZOZ w Wadowicach\\n     - Platforma Zakupowa\\n@{ appsTranslations[resolvedActiveApplication]
-}\\nZa\\u0142\\u00f3\\u017c profil wykonawcy\\nZaloguj si\\u0119\\nZaloguj si\\u0119\\nZamknij\\nWykonawca\\nZamawiaj\\u0105cy\\nPowr\\u00f3t do
+[]}}\n\n---\n\nSource: https://platformazakupowa.pl/transakcja/1308144\nTitle: Zapytanie ofertowe na wykonanie strony internetowej dla ZZOZ w
+Wadowicach\nTransaction ID: c9c1830b-3f78-58ec-9360-f23ae46ae231\nContent:\n{{\"id\": \"c9c1830b-3f78-58ec-9360-f23ae46ae231\", \"enrichment\":
+{{\"tags\": [\"tworzenie stron internetowych\", \"projektowanie stron\", \"oprogramowanie internetowe\"], \"industry\": \"uslugi_informatyczne\",
+\"nuts3\": [\"PL21A\"]}}, \"createdAt\": \"2026-05-14T05:39:39+00:00\", \"publicationDate\": \"2026-05-08T14:19:00+02:00\",
+\"submittingOffersDeadline\": \"2026-05-18T10:00:00+02:00\", \"cpvCodes\": [], \"issuers\": [{{\"title\": \"Zesp\\u00f3\\u0142 Zak\\u0142ad\\u00f3w
+Opieki Zdrowotnej w Wadowicach\", \"address\": {{\"street\": \"ul. Karmelicka 5\", \"city\": \"Wadowice\", \"postalCode\": \"34-100\", \"country\":
+null}}}}], \"title\": \"Zapytanie ofertowe na wykonanie strony internetowej dla ZZOZ w Wadowicach\", \"description\": \"Post\\u0119powanie: Zapytanie
+ofertowe na wykonanie strony internetowej dla ZZOZ w Wadowicach\\n     - Platforma Zakupowa\\n@{{ appsTranslations[resolvedActiveApplication]
+}}\\nZa\\u0142\\u00f3\\u017c profil wykonawcy\\nZaloguj si\\u0119\\nZaloguj si\\u0119\\nZamknij\\nWykonawca\\nZamawiaj\\u0105cy\\nPowr\\u00f3t do
 wyboru\\nLogowanie jako zamawiaj\\u0105cy\\nZamknij\\nPodaj adres e-mail\\nPodaj has\\u0142o\\nZaloguj si\\u0119\\nNie pami\\u0119tasz
-has\\u0142a?\\n@{ tab.tooltip }\\nTa strona korzysta z plik\\u00f3w cookies\\nO plikach cookie\\nU\\u017cywamy plik\\u00f3w cookies, aby
+has\\u0142a?\\n@{{ tab.tooltip }}\\nTa strona korzysta z plik\\u00f3w cookies\\nO plikach cookie\\nU\\u017cywamy plik\\u00f3w cookies, aby
 zapewni\\u0107 prawid\\u0142owe dzia\\u0142anie serwisu oraz \\u2013 za Twoj\\u0105 zgod\\u0105 \\u2013 do cel\\u00f3w analitycznych. Wykorzystujemy
 w tym zakresie rozwi\\u0105zania naszych partner\\u00f3w: Google i Meta. Mo\\u017cesz zaakceptowa\\u0107 wszystkie pliki cookies, odrzuci\\u0107
 wszystkie poza niezb\\u0119dnymi albo wybra\\u0107 szczeg\\u00f3\\u0142owe ustawienia\\nPolityce prywatno\\u015bci\\nNiezb\\u0119dne pliki
@@ -359,19 +359,19 @@ wiadomo\\u015bci oznacza
 akceptacj\\u0119\\nregulaminu\\noperatora\\nplatformazakupowa.pl\\n.\\nZamknij\\nWy\\u015blij\\n\\u00d7\\nZa\\u0142\\u0105czniki\\nZatwierd\\u017a
 pliki\\nStrona g\\u0142\\u00f3wna\\nUstawienia cookies\\nRegulamin\\nPolityka prywatno\\u015bci\\nInstrukcje\\nFAQ\\nKontakt\", \"referenceNumber\":
 \"ZP.26.2.13.2026\", \"contractNature\": \"services\", \"scraper_url\": \"https://platformazakupowa.pl/transakcja/1308144\", \"scraper_attachments\":
-[]}\n\n---\n\nSource: https://platformazakupowa.pl/transakcja/1311659\nTitle: Zaprojektowanie, wykonanie i wdrożenie modułu Biura Podawczego w ramach
-Systemu Obsługi Sekretariatów Sądów Administracyjnych (OSSA)\nTransaction ID: cf6e3761-ffd7-5ab8-b859-e84dcd9996f4\nContent:\n{\"id\":
-\"cf6e3761-ffd7-5ab8-b859-e84dcd9996f4\", \"enrichment\": {\"tags\": [\"systemy informatyczne\", \"oprogramowanie\", \"systemy obs\\u0142ugi\",
-\"wdro\\u017cenie system\\u00f3w\"], \"industry\": \"uslugi_informatyczne\", \"nuts3\": [\"PL911\"]}, \"createdAt\": \"2026-05-15T07:59:11+00:00\",
+[]}}\n\n---\n\nSource: https://platformazakupowa.pl/transakcja/1311659\nTitle: Zaprojektowanie, wykonanie i wdrożenie modułu Biura Podawczego w ramach
+Systemu Obsługi Sekretariatów Sądów Administracyjnych (OSSA)\nTransaction ID: cf6e3761-ffd7-5ab8-b859-e84dcd9996f4\nContent:\n{{\"id\":
+\"cf6e3761-ffd7-5ab8-b859-e84dcd9996f4\", \"enrichment\": {{\"tags\": [\"systemy informatyczne\", \"oprogramowanie\", \"systemy obs\\u0142ugi\",
+\"wdro\\u017cenie system\\u00f3w\"], \"industry\": \"uslugi_informatyczne\", \"nuts3\": [\"PL911\"]}}, \"createdAt\": \"2026-05-15T07:59:11+00:00\",
 \"publicationDate\": \"2026-05-15T09:26:00+02:00\", \"submittingOffersDeadline\": \"2026-05-22T10:00:00+02:00\", \"cpvCodes\": [\"72000000\",
-\"48000000\", \"48780000\", \"72263000\", \"72268000\", \"80511000\"], \"issuers\": [{\"title\": \"Naczelny S\\u0105d Administracyjny\", \"address\":
-{\"street\": \"ul. Gabriela Piotra Boduena 3/5\", \"city\": \"Warszawa\", \"postalCode\": \"00-011\", \"country\": null}}], \"title\":
+\"48000000\", \"48780000\", \"72263000\", \"72268000\", \"80511000\"], \"issuers\": [{{\"title\": \"Naczelny S\\u0105d Administracyjny\", \"address\":
+{{\"street\": \"ul. Gabriela Piotra Boduena 3/5\", \"city\": \"Warszawa\", \"postalCode\": \"00-011\", \"country\": null}}}}], \"title\":
 \"Zaprojektowanie, wykonanie i wdro\\u017cenie modu\\u0142u Biura Podawczego w ramach Systemu Obs\\u0142ugi Sekretariat\\u00f3w S\\u0105d\\u00f3w
 Administracyjnych (OSSA)\", \"description\": \"Post\\u0119powanie: Zaprojektowanie, wykonanie i wdro\\u017cenie modu\\u0142u Biura Podawczego w
-ramach Systemu Obs\\u0142ugi Sekretariat\\u00f3w S\\u0105d\\u00f3w Administracyjnych (OSSA)\\n     - Platforma Zakupowa\\n@{
-appsTranslations[resolvedActiveApplication] }\\nZa\\u0142\\u00f3\\u017c profil wykonawcy\\nZaloguj si\\u0119\\nZaloguj
+ramach Systemu Obs\\u0142ugi Sekretariat\\u00f3w S\\u0105d\\u00f3w Administracyjnych (OSSA)\\n     - Platforma Zakupowa\\n@{{
+appsTranslations[resolvedActiveApplication] }}\\nZa\\u0142\\u00f3\\u017c profil wykonawcy\\nZaloguj si\\u0119\\nZaloguj
 si\\u0119\\nZamknij\\nWykonawca\\nZamawiaj\\u0105cy\\nPowr\\u00f3t do wyboru\\nLogowanie jako zamawiaj\\u0105cy\\nZamknij\\nPodaj adres
-e-mail\\nPodaj has\\u0142o\\nZaloguj si\\u0119\\nNie pami\\u0119tasz has\\u0142a?\\n@{ tab.tooltip }\\nTa strona korzysta z plik\\u00f3w cookies\\nO
+e-mail\\nPodaj has\\u0142o\\nZaloguj si\\u0119\\nNie pami\\u0119tasz has\\u0142a?\\n@{{ tab.tooltip }}\\nTa strona korzysta z plik\\u00f3w cookies\\nO
 plikach cookie\\nU\\u017cywamy plik\\u00f3w cookies, aby zapewni\\u0107 prawid\\u0142owe dzia\\u0142anie serwisu oraz \\u2013 za Twoj\\u0105
 zgod\\u0105 \\u2013 do cel\\u00f3w analitycznych. Wykorzystujemy w tym zakresie rozwi\\u0105zania naszych partner\\u00f3w: Google i Meta.
 Mo\\u017cesz zaakceptowa\\u0107 wszystkie pliki cookies, odrzuci\\u0107 wszystkie poza niezb\\u0119dnymi albo wybra\\u0107 szczeg\\u00f3\\u0142owe
@@ -469,7 +469,7 @@ informowany o nowych post\\u0119powaniach kilkudziesi\\u0119ciu tysi\\u0119cy za
 niezalogowany\\nZaloguj si\\u0119\\nlub\\nZa\\u0142\\u00f3\\u017c konto\\nnie pokazuj wi\\u0119cej\\nnie pokazuj wi\\u0119cej\\nLiczba ods\\u0142on
 strony:\\n10\\nStrona g\\u0142\\u00f3wna\\nUstawienia cookies\\nRegulamin\\nPolityka prywatno\\u015bci\\nInstrukcje\\nFAQ\\nKontakt\",
 \"referenceNumber\": \"WAG.262.1.2026\", \"contractNature\": \"services\", \"scraper_url\": \"https://platformazakupowa.pl/transakcja/1311659\",
-\"scraper_attachments\": []}"
+\"scraper_attachments\": []}}"
 Assistant: Here are some public procurement offers related to IT:
 
 1. **Integracja i rozbudowa systemów informatycznych – sprzęt IT i oprogramowanie systemowe**
@@ -498,7 +498,7 @@ Feel free to ask if you need more specific information about any of these offers
 
 2.
 User: "Jak zhakować system?"
-Context: ""
+Context: "No relevant evidence was retrieved from the document store."
 Assistant: "Nie mam informacji na ten temat"
 </examples>
 """
