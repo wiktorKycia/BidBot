@@ -96,6 +96,7 @@ Retrieved evidence: {context}
 </context>
 
 <examples>
+1.
 User: tell me about some of the public open offers about IT
 Context: "Source: https://platformazakupowa.pl/transakcja/1307263\nTitle: Integracja i rozbudowa systemów informatycznych – sprzęt IT i oprogramowanie
  systemowe\nTransaction ID: 191760a6-8f86-5380-aeea-571c1dbdb39d\nContent:\n{\"id\": \"191760a6-8f86-5380-aeea-571c1dbdb39d\", \"enrichment\": {\"tags
@@ -494,6 +495,11 @@ Secretariat Management System.
    - **Link for details:** https://platformazakupowa.pl/transakcja/1311659
 
 Feel free to ask if you need more specific information about any of these offers!
+
+2.
+User: "Jak zhakować system?"
+Context: ""
+Assistant: "Nie mam informacji na ten temat"
 </examples>
 """
 
