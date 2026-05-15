@@ -170,6 +170,11 @@ async def download_file(
         async with session.get(url) as response:
             response.raise_for_status()
 
+            # pierwsze to pdf z kodem 429, a drugie to ostrzeżenie o dzieleniu i łączeniu plików
+            if response.content_length in (154853, 528025):
+                logger.warning("Pominięto plik z ostrzeżeniem")
+                return metadata
+
             content_type = response.headers.get("Content-Type", "").lower()
             if "text/html" in content_type:
                 logger.warning(f"Ominięto plik, ponieważ URL zwraca stronę HTML: {url}")
