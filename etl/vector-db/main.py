@@ -18,7 +18,7 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, Syst
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_core.chat_history import BaseChatMessageHistory, InMemoryChatMessageHistory
 from langchain_core.runnables.history import RunnableWithMessageHistory
-from prompts import use_search_system_message_template
+from prompts import use_search_system_message_template, main_system_message_template
 
 load_dotenv("../../.env")
 OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
@@ -26,7 +26,7 @@ OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
 MODEL = "gpt-4o-mini"
 MODEL_EMBEDDINGS = "text-embedding-3-small"
 
-FRESH_DATA_RELOAD = True  # if set to True, the data will be first deleted, then loaded, for testing purposes
+FRESH_DATA_RELOAD = False  # if set to True, the data will be first deleted, then loaded, for testing purposes
 
 DATA_PATH = Path(__file__).resolve().parent.parent.parent / "data"
 PARSED_JSON_PATH = DATA_PATH / "parsed"
@@ -408,6 +408,16 @@ def ask(question: str, conversation_history: list[dict[str, str]]) -> str:
         ),
     )
 
+    answer_prompt = ChatPromptTemplate.from_messages(
+        [
+            SystemMessagePromptTemplate.from_template(main_system_message_template),
+            (
+                "human",
+                "Conversation history:\n{history}\n\nUser question:\n{question}",
+            ),
+        ]
+    )
+
     history_text = format_history(conversation_history)
     messages = answer_prompt.format_messages(history=history_text, question=question, context=context)
     message = ""
@@ -446,23 +456,6 @@ if __name__ == "__main__":
     logger = configure_logger()
 
     llm = ChatOpenAI(model=MODEL)
-    answer_prompt = ChatPromptTemplate.from_messages(
-        [
-            (
-                "system",
-                """You are a helpful assistant focused on procurement offers.
-    Answer only with information explicitly supported by the retrieved evidence.
-    If the evidence does not explicitly confirm a transaction, ID, or detail, say that you cannot confirm it.
-    Do not invent transaction numbers, titles, or organizations.
-    Be concise and clear, but include the exact transaction IDs when they are present in the evidence.
-    """,
-            ),
-            (
-                "human",
-                "Conversation history:\n{history}\n\nUser question:\n{question}\n\nRetrieved evidence:\n{context}",
-            ),
-        ]
-    )
 
     embeddings = OpenAIEmbeddings(model=MODEL_EMBEDDINGS)
 
