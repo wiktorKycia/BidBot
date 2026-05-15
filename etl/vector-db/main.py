@@ -18,8 +18,20 @@ from langchain_core.prompts import ChatPromptTemplate, SystemMessagePromptTempla
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from prompts import main_system_message_template, use_search_system_message_template
 
-load_dotenv("../../.env")
-OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
+DOTENV_PATH = Path(__file__).resolve().parent.parent.parent / ".env"
+load_dotenv(DOTENV_PATH)
+
+
+def require_openai_api_key() -> str:
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise RuntimeError(
+            f"OPENAI_API_KEY is not set. Configure it in the environment or in {DOTENV_PATH}."
+        )
+    return api_key
+
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 MODEL = "gpt-4o-mini"
 MODEL_EMBEDDINGS = "text-embedding-3-small"
