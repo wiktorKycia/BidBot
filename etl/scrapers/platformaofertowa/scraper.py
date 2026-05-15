@@ -182,8 +182,10 @@ async def download_file(
                 msg["Content-Disposition"] = cd_header
                 cd_filename = msg.get_filename()
                 if cd_filename:
-                    filename = cd_filename
-                    filepath = save_dir / filename
+                    sanitized_cd_filename = Path(cd_filename).name
+                    if sanitized_cd_filename:
+                        filename = sanitized_cd_filename
+                        filepath = save_dir / filename
 
             if "." not in filename:
                 content_type = response.headers.get("Content-Type", "")
