@@ -60,7 +60,7 @@ class RetrievalPlan:
 @dataclass(frozen=True)
 class IndexedDocument:
     document: Any
-    source: str
+    source: str # file absolute filepath to .json document
     title: str
     transaction_id: str
     raw_text: str
