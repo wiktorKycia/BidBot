@@ -73,7 +73,7 @@ often about public procurement offers mainly in Poland, but also in European Uni
 <objective>.
 Determine the language in which the user's last query is written and answer the user in it as precisely as possible.
 Answer only with information explicitly supported by the retrieved evidence defined as context.
-You must present ALL the offers from the context to the user without filtering any results, presenting them in a nicely formatted and human-friendly 
+You must present ALL the offers from the context to the user without filtering any results, presenting them in a nicely formatted and human-friendly
 text way. Do not omit, skip, or filter out any offers that are present in the retrieved context.
 Do not invent transaction numbers, titles, or organizations.
 Be concise and clear, but include the exact transaction IDs when they are present in the evidence.
@@ -99,15 +99,19 @@ Retrieved evidence: {context}
 1.
 User: tell me about some of the public open offers about IT
 Context: "Source: https://platformazakupowa.pl/transakcja/1307263\nTitle: Integracja i rozbudowa systemów informatycznych – sprzęt IT i oprogramowanie
- systemowe\nTransaction ID: 191760a6-8f86-5380-aeea-571c1dbdb39d\nContent:\n{{\"id\": \"191760a6-8f86-5380-aeea-571c1dbdb39d\", \"enrichment\": {{\"tags
+ systemowe\nTransaction ID: 191760a6-8f86-5380-aeea-571c1dbdb39d\nContent:\n{{\"id\": \"191760a6-8f86-5380-aeea-571c1dbdb39d\", \"enrichment\": {{\"ta
+ gs
  \": [\"systemy informatyczne\", \"sprz\\u0119t komputerowy\", \"oprogramowanie systemowe\", \"integracja system\\u00f3w\"], \"industry\": \"uslugi_in
- formatyczne\", \"nuts3\": [\"PL636\"]}}, \"createdAt\": \"2026-05-11T06:00:05+00:00\", \"publicationDate\": \"2026-05-11T07:11:00+02:00\", \"submittin
- gOffersDeadline\": \"2026-05-26T10:30:00+02:00\", \"cpvCodes\": [\"48820000\", \"30233000\", \"32420000\", \"48000000\", \"72263000\", \"72250000\"],
-  \"issuers\": [{{\"title\": \"Samodzielny Publiczny Specjalistyczny Zak\\u0142ad Opieki Zdrowotnej w L\\u0119borku\", \"address\": {{\"street\": \"ul.
-  Juliana W\\u0119grzynowicza 13\", \"city\": \"L\\u0119bork\", \"postalCode\": \"84-300\", \"country\": null}}}}], \"title\": \"Integracja i rozbudowa
+ formatyczne\", \"nuts3\": [\"PL636\"]}}, \"createdAt\": \"2026-05-11T06:00:05+00:00\", \"publicationDate\": \"2026-05-11T07:11:00+02:00\",
+ \"submittingOffersDeadline\": \"2026-05-26T10:30:00+02:00\", \"cpvCodes\": [\"48820000\", \"30233000\", \"32420000\", \"48000000\", \"72263000\",
+ \"72250000\"],
+  \"issuers\": [{{\"title\": \"Samodzielny Publiczny Specjalistyczny Zak\\u0142ad Opieki Zdrowotnej w L\\u0119borku\", \"address\": {{\"street\": \"ul
+  .
+  Juliana W\\u0119grzynowicza 13\", \"city\": \"L\\u0119bork\", \"postalCode\": \"84-300\", \"country\": null}}}}], \"title\": \"Integracja i
+   rozbudowa
   system\\u00f3w informatycznych \\u2013 sprz\\u0119t IT i oprogramowanie systemowe\", \"description\": \"Post\\u0119powanie: Integracja i rozbudowa
-  system\\u00f3w informatycznych \\u2013 sprz\\u0119t IT i oprogramowanie systemowe\\n     - Platforma Zakupowa\\n@{{ appsTranslations[resolvedActiveAp
-  plication] }}\\nZa\\u0142\\u00f3\\u017c profil wykonawcy\\nZaloguj si\\u0119\\nZaloguj si\\u0119\\nZamknij\\nWykonawca\\nZamawiaj\\u0105cy\\nPowr
+  system\\u00f3w informatycznych \\u2013 sprz\\u0119t IT i oprogramowanie systemowe\\n     - Platforma Zakupowa\\n@{{ appsTranslations[resolvedActiveA
+  pplication] }}\\nZa\\u0142\\u00f3\\u017c profil wykonawcy\\nZaloguj si\\u0119\\nZaloguj si\\u0119\\nZamknij\\nWykonawca\\nZamawiaj\\u0105cy\\nPowr
   \\u00f3t do wyboru\\nLogowanie jako zamawiaj\\u0105cy\\nZamknij\\nPodaj adres e-mail\\nPodaj has\\u0142o\\nZaloguj si\\u0119\\nNie pami\\u0119tasz
   has\\u0142a?\\n@{{ tab.tooltip }}\\nTa strona korzysta z plik\\u00f3w cookies\\nO plikach cookie\\nU\\u017cywamy plik\\u00f3w cookies, aby zapewni
   \\u0107 prawid\\u0142owe dzia\\u0142anie serwisu oraz \\u2013 za Twoj\\u0105 zgod\\u0105 \\u2013 do cel\\u00f3w analitycznych. Wykorzystujemy w tym
@@ -502,4 +506,3 @@ Context: "No relevant evidence was retrieved from the document store."
 Assistant: "Nie mam informacji na ten temat"
 </examples>
 """
-
