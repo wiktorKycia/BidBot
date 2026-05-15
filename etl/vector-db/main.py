@@ -325,10 +325,7 @@ def semantic_lookup(search_query: str, limit: int) -> list[IndexedDocument]:
 
 
 def hybrid_retrieve(question: str, conversation_history: list[dict[str, str]]) -> tuple[RetrievalPlan, list[IndexedDocument]]:
-    try:
-        plan = plan_search(question, conversation_history)
-    except AttributeError, json.JSONDecodeError, TypeError, KeyError, LLMReturnedFaultyDataFormatError, Exception:
-        raise  # propagate plan errors further
+    plan = plan_search(question, conversation_history)
     exact_matches = exact_transaction_lookup(plan.transaction_ids)
 
     if not plan.needs_search and not exact_matches:
