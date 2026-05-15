@@ -29,9 +29,7 @@ load_dotenv(DOTENV_PATH)
 def require_openai_api_key() -> str:
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
-        raise RuntimeError(
-            f"OPENAI_API_KEY is not set. Configure it in the environment or in {DOTENV_PATH}."
-        )
+        raise RuntimeError(f"OPENAI_API_KEY is not set. Configure it in the environment or in {DOTENV_PATH}.")
     return api_key
 
 
