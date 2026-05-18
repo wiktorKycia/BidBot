@@ -40,13 +40,16 @@ async def tag_file(filename: str) -> int:
         system_message,
         HumanMessage(content=json.dumps(data))
     ])
-    tags = dict(json.loads(response.content))
+    tags = list(json.loads(response.content))
     logger.debug(f"Otagowano {filename} tagami: {tags}")
 
-    if "enrichment" not in data or "tags" not in data["enrichment"]:
-        data["enrichment"].update({"tags": tags})
+    if "enrichment" not in data:
+        data["enrichment"] = {}
+        
+    if "tags" not in data["enrichment"]:
+        data["enrichment"]["tags"] = tags
     else:
-        data["enrichment"]["tags"].append(tags)
+        data["enrichment"]["tags"].extend(tags)
 
     await save_json(filepath, data)
     return 1 # helps count how many files were tagged
