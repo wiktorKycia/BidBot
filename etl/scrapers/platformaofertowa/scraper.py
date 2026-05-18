@@ -57,38 +57,50 @@ def extract_direct_url(url: str) -> str:
 
 
 def extract_best_url(item: dict) -> str:
-    extra_data = item.get("sourceExtraData") or {}
+    def get_tender_url(i: dict):
+        return i.get("sourceExtraData", {}).get("integrationsTender", {}).get("webSourceUrl")
 
-    integrations_tender = extra_data.get("integrationsTender") or {}
-    web_source = integrations_tender.get("webSourceUrl")
-    if web_source:
-        return web_source
+    def get_notice_url(i: dict):
+        notices = i.get("sourceExtraData", {}).get("integrationsNotices")
+        if isinstance(notices, list) and notices:
+            return notices[0].get("webSourceUrl")
+        return None
 
-    integrations_notices = extra_data.get("integrationsNotices") or []
-    if isinstance(integrations_notices, list) and len(integrations_notices) > 0:
-        notice_url = integrations_notices[0].get("webSourceUrl")
-        if notice_url:
-            return notice_url
+    def get_transaction_url(i: dict):
+        url = i.get("websiteUrl") or ""
+        return url if "transakcja" in url else None
 
-    website_url = item.get("websiteUrl") or ""
-    if website_url and "transakcja" in website_url:
-        return website_url
+    def get_origin_url(i: dict):
+        urls = i.get("originUrls")
+        if isinstance(urls, list):
+            for u in urls:
+                u_str = str(u).strip()
+                if u_str.startswith("http") and " " not in u_str:
+                    return u_str
+        return None
 
-    origin_urls = item.get("originUrls") or []
-    if isinstance(origin_urls, list):
-        for url_candidate in origin_urls:
-            url_candidate = str(url_candidate).strip()
-            if url_candidate.startswith("http") and " " not in url_candidate:
-                return url_candidate
+    def get_website_url(i: dict):
+        url = i.get("websiteUrl") or ""
+        return url if str(url).startswith("http") else None
 
-    if website_url and str(website_url).startswith("http"):
-        return website_url
+    def get_source_url(i: dict):
+        url = i.get("sourceUrl") or ""
+        return url if str(url).startswith("http") else None
 
-    source_url = item.get("sourceUrl") or ""
-    if source_url and str(source_url).startswith("http"):
-        return source_url
+    strategies = [
+        get_tender_url,
+        get_notice_url,
+        get_transaction_url,
+        get_origin_url,
+        get_website_url,
+        get_source_url,
+    ]
 
-    notice_id = str(item.get("id"))
+    for strategy in strategies:
+        if url := strategy(item):
+            return url
+
+    notice_id = str(item.get("id", ""))
     return f"{BASE_URL}/pl/tenders/tenders-list/{notice_id}"
 
 
