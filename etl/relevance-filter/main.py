@@ -17,11 +17,7 @@ async def tag_file(filename: str):
     data: dict = await read_json(PARSED_DIR / filename)
     if len(data['enrichment']['tags']) > 0:
         return None
-    result = None
-
-
-
-    return result
+    raise Exception()
 
 
 async def main():
@@ -36,11 +32,12 @@ async def main():
     tasks = [tag_file(filename) for filename in filenames]
 
     results = await asyncio.gather(*tasks, return_exceptions=True)
-
+    errors_count = 0
     for res in results:
         if isinstance(res, Exception):
+            errors_count+=1
             logger.error(f"Błąd przy tagowaniu pliku: {res!r}")
-
+    logger.info(f"Ilość błędów: {errors_count}")
 
 if __name__ == "__main__":
     asyncio.run(main())
