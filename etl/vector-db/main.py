@@ -282,8 +282,8 @@ def semantic_lookup(search_query: str, limit: int) -> list[IndexedDocument]:
             search_query,
             k=limit,
         )
-    except Exception:
-        logger.exception("semantic_lookup failed")
+    except Exception as e:
+        logger.exception(f"semantic lookup failed: {e}")
         return []
 
     results.sort(key=itemgetter(1), reverse=True)  # itemgetter(1) is the same as: lambda x: x[1], but faster
@@ -368,10 +368,7 @@ def add_documents_to_vector_store(documents: list[Document], vector_store: Chrom
 def ask(question: str, conversation_history: list[dict[str, str]]) -> str:
     logger.info("received question=%s", question)
     logger.debug("current conversation_history=%s", to_json_log(conversation_history))
-    try:
-        plan, retrieved_documents = hybrid_retrieve(question, conversation_history)
-    except Exception:
-        raise  # propagate the error further
+    plan, retrieved_documents = hybrid_retrieve(question, conversation_history)
 
     if not retrieved_documents:
         context = "No relevant evidence was retrieved from the document store."
@@ -435,7 +432,8 @@ def main():
             print(f"Assistant: {answer}")
             conversation_history.append({"user": contents, "assistant": answer})
         except Exception as e:
-            print(f"Error: {e}")
+            print(f"An unexpected error occurred, sorry :(")
+            logger.exception(f"Error while displaying output to the user: {e}")
             break
 
 
