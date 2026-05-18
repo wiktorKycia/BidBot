@@ -40,7 +40,8 @@ DATA_PATH = Path(__file__).resolve().parent.parent.parent / "data"
 PARSED_JSON_PATH = DATA_PATH / "parsed"
 ATTACHMENTS_PATH = DATA_PATH / "attachments"
 
-CHROMA_DB_PATH = "./chroma_langchain_db"
+CHROMA_DB_PATH = Path("chroma_langchain_db")
+
 LOG_DIR = Path(__file__).resolve().parent / "logs"
 LOG_PATH = LOG_DIR / "vector_db.log"
 
