@@ -16,11 +16,7 @@ from langchain_community.document_loaders.directory import DirectoryLoader
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate, SystemMessagePromptTemplate
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-
-try:
-    from .prompts import main_system_message_template, use_search_system_message_template
-except ImportError:
-    from prompts import main_system_message_template, use_search_system_message_template
+from prompts import main_system_message_template, use_search_system_message_template
 
 DOTENV_PATH = Path(__file__).resolve().parent.parent.parent / ".env"
 load_dotenv(DOTENV_PATH)
