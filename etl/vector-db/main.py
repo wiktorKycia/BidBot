@@ -22,7 +22,7 @@ MODEL_EMBEDDINGS = "text-embedding-3-small"
 
 FRESH_DATA_RELOAD = False  # if set to True, the data will be first deleted, then loaded, for testing purposes
 
-CHROMA_DB_PATH = "./chroma_langchain_db"
+CHROMA_DB_PATH = Path("chroma_langchain_db")
 
 LOG_PATH = LOG_DIR / "vector_db.log"
 
