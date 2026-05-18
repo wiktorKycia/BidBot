@@ -12,7 +12,8 @@ dependencies = [
     "backoff>=2.2.1",
     "beautifulsoup4>=4.14.3",
     "lxml>=6.1.0",
-    "requests>=2.33.1",
+    "requests==2.34.1",
+    "tzdata>=2026.2",
 ]
 
 [dependency-groups]
@@ -21,7 +22,7 @@ dev = [
 ]
 
 [tool.ruff]
-line-length = 150
+line-length = 152
 target-version = "py314"
 
 [tool.ruff.lint]
