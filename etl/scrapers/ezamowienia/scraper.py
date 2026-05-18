@@ -45,7 +45,7 @@ def is_tender_open(raw_data: dict) -> bool:
 
         return deadline > now
     except ValueError as e:
-        logger.error(f"Błąd parsowania daty {deadline_str}: {e}")
+        logger.exception(f"Błąd parsowania daty {deadline_str}: {e}")
         return False
 
 
