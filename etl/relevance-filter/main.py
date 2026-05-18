@@ -1,8 +1,9 @@
 import asyncio
+import json
 import os
 from pathlib import Path
 import logging
-from langchain_core.prompts import ChatPromptTemplate, SystemMessagePromptTemplate
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from etl.utils import read_json
 from etl.settings import setup_logging, require_openai_api_key, MODEL, PARSED_DIR
@@ -14,7 +15,8 @@ OPENAI_API_KEY = require_openai_api_key()
 setup_logging()
 logger = logging.getLogger(__name__)
 
-prompt = """
+llm = ChatOpenAI(model=MODEL, api_key=OPENAI_API_KEY)
+system_message = SystemMessage("""
 You are an expert in public procurement and document indexing. 
 Your task is to analyze a JSON document representing a public procurement offer and generate a list of 3 to 5 high-quality keywords.
 
@@ -28,14 +30,18 @@ Guidelines for keywords:
 
 Input: A JSON document of a procurement offer.
 Output: ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5"]
-"""
+""")
 
 async def tag_file(filename: str):
     data: dict = await read_json(PARSED_DIR / filename)
-    if len(data['enrichment']['tags']) > 0: # nie trzeba tagować, bo tagi już są
+    if len(data['enrichment']['tags']) > 0:  # nie trzeba tagować, bo tagi już są
         return None
-    
-    
+    response = llm.invoke([
+        system_message,
+        HumanMessage(content=json.dumps(data))
+    ])
+    tags = dict(json.loads(response.content))
+
 
 
 async def main():
@@ -50,12 +56,10 @@ async def main():
     tasks = [tag_file(filename) for filename in filenames]
 
     results = await asyncio.gather(*tasks, return_exceptions=True)
-    errors_count = 0
     for res in results:
         if isinstance(res, Exception):
-            errors_count+=1
             logger.error(f"Błąd przy tagowaniu pliku: {res!r}")
-    logger.info(f"Ilość błędów: {errors_count}")
+
 
 if __name__ == "__main__":
     asyncio.run(main())
