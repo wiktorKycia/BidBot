@@ -307,7 +307,19 @@ async def process_single_notice(
     clean_description = doc.get_text(separator="\n", strip=True)
 
     attachment_links = set()
-    valid_link_keywords = [".pdf", ".zip", ".7z", ".rar", ".doc", ".docx", ".xls", ".xlsx", "download", "file", "viewer"]
+    valid_link_keywords = [
+        ".pdf",
+        ".zip",
+        ".7z",
+        ".rar",
+        ".doc",
+        ".docx",
+        ".xls",
+        ".xlsx",
+        "download",
+        "file",
+        "viewer",
+    ]
 
     for a_tag in doc.find_all("a", href=True):
         href = str(a_tag.get("href", ""))

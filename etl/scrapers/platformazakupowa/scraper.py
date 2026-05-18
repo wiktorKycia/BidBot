@@ -81,8 +81,19 @@ def sanitize_filename(filename: str, fallback: str = "attachment") -> str:
     return sanitized
 
 
-@backoff.on_exception(backoff.expo, (aiohttp.ClientError, asyncio.TimeoutError, aiohttp.ClientResponseError, DownloadIntegrityError), max_tries=3)
-async def download_file(session: aiohttp.ClientSession, url: str, target_dir: Path, filename: str, semaphore: asyncio.Semaphore, referer_url: str):
+@backoff.on_exception(
+    backoff.expo,
+    (aiohttp.ClientError, asyncio.TimeoutError, aiohttp.ClientResponseError, DownloadIntegrityError),
+    max_tries=3,
+)
+async def download_file(
+    session: aiohttp.ClientSession,
+    url: str,
+    target_dir: Path,
+    filename: str,
+    semaphore: asyncio.Semaphore,
+    referer_url: str,
+):
     file_path = target_dir / filename
     if file_path.exists() and file_path.stat().st_size > 0:
         return True
@@ -374,7 +385,12 @@ async def process_page(session: aiohttp.ClientSession, page_number: int, semapho
 
         issuers = []
         if details.get("client_name"):
-            issuers.append({"title": details.get("client_name"), "address": {"street": None, "city": None, "postalCode": None, "country": None}})
+            issuers.append(
+                {
+                    "title": details.get("client_name"),
+                    "address": {"street": None, "city": None, "postalCode": None, "country": None},
+                }
+            )
 
         parsed_data = {
             "id": notice_id,

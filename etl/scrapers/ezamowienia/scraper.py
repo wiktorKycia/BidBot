@@ -62,14 +62,33 @@ def parse_notice(raw_data: dict) -> dict:
         for a_tag in soup.find_all("a", href=True):
             href = a_tag["href"]
             if href.startswith("http") and not any(att["url"] == href for att in attachments):
-                attachments.append({"url": href, "filename": None, "local_path": None, "downloaded": False, "is_zip": href.lower().endswith(".zip"), "extracted_status": None})
+                attachments.append(
+                    {
+                        "url": href,
+                        "filename": None,
+                        "local_path": None,
+                        "downloaded": False,
+                        "is_zip": href.lower().endswith(".zip"),
+                        "extracted_status": None,
+                    }
+                )
 
     object_id = str(raw_data.get("objectId"))
 
     issuers = []
     org_name = raw_data.get("organizationName")
     if org_name:
-        issuers.append({"title": org_name, "address": {"street": None, "city": raw_data.get("organizationCity"), "postalCode": None, "country": None}})
+        issuers.append(
+            {
+                "title": org_name,
+                "address": {
+                    "street": None,
+                    "city": raw_data.get("organizationCity"),
+                    "postalCode": None,
+                    "country": None,
+                },
+            }
+        )
 
     return {
         "id": object_id,
