@@ -142,8 +142,8 @@ async def download_file(
     url = urljoin(BASE_URL, url)
 
     filename = url.split("/")[-1].split("?")[0]
-    valid_extensions = [".pdf", ".zip", ".7z", ".rar", ".doc", ".docx", ".xls", ".xlsx"]
-    has_valid_extension = any(filename.lower().endswith(ext) for ext in valid_extensions)
+    valid_extensions = {".pdf", ".zip", ".7z", ".rar", ".doc", ".docx", ".xls", ".xlsx"}
+    has_valid_extension = Path(filename).suffix.lower() in valid_extensions
 
     if not filename or not has_valid_extension:
         filename = f"zalacznik_{hashlib.md5(url.encode()).hexdigest()[:6]}"
