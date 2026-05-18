@@ -114,18 +114,6 @@ def extract_transaction_ids_from_text(*values: str) -> tuple[str, ...]:
     return tuple(unique_strings(ids))
 
 
-def get_document_source(document: Document) -> str:
-    # source = ( # left here commented, because on linux in file's metadata the path is called "source", but I don't know how is it on Windows or Mac
-    #     document.metadata.get("source")
-    #     or document.metadata.get("location")
-    #     or document.metadata.get("path")
-    #     or document.metadata.get("file_path")
-    #     or "Unknown source"
-    # )
-
-    return document.metadata["source"]
-
-
 def build_indexed_document(document: Document) -> IndexedDocument:
     """converts a LangChain document into the internal"""
 
@@ -137,7 +125,6 @@ def build_indexed_document(document: Document) -> IndexedDocument:
         payload = {}
 
     # extract a source path from metadata
-    # source = get_document_source(document)
     source = payload.get("scraper_url")
 
     return IndexedDocument(document=document, source=source, title=payload["title"], transaction_id=payload["id"], raw_text=raw_text)
