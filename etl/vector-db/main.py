@@ -102,13 +102,7 @@ def document_log_payload(record: Any) -> dict[str, Any]:
 
 def unique_strings(values: list[str]) -> list[str]:
     """removes duplicates while preserving order. It is used to keep transaction IDs from repeating"""
-    seen: set[str] = set()
-    ordered: list[str] = []
-    for value in values:
-        if value not in seen:
-            seen.add(value)
-            ordered.append(value)
-    return ordered
+    return list(dict.fromkeys(values))
 
 
 def extract_transaction_ids_from_text(*values: str) -> tuple[str, ...]:
