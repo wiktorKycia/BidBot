@@ -41,7 +41,8 @@ PARSED_JSON_PATH = DATA_PATH / "parsed"
 ATTACHMENTS_PATH = DATA_PATH / "attachments"
 
 CHROMA_DB_PATH = "./chroma_langchain_db"
-LOG_PATH = Path(__file__).resolve().with_name("vector_db.log")
+LOG_DIR = Path(__file__).resolve().parent / "logs"
+LOG_PATH = LOG_DIR / "vector_db.log"
 
 MAX_CONTEXT_DOCS = 5
 MAX_SEMANTIC_RESULTS = 4
@@ -79,6 +80,8 @@ def configure_logger() -> logging.Logger:
 
     logger.setLevel(logging.DEBUG)
     logger.propagate = False
+
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
 
     handler = RotatingFileHandler(LOG_PATH, maxBytes=5_000_000, backupCount=3, encoding="utf-8")
     handler.setLevel(logging.DEBUG)
