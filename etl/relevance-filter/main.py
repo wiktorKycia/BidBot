@@ -30,18 +30,18 @@ Input: A JSON document of a procurement offer.
 Output: ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5"]
 """)
 
-async def tag_file(filename: str):
+async def tag_file(filename: str) -> int:
     filepath = PARSED_DIR / filename
     data: dict = await read_json(filepath)
     if len(data['enrichment']['tags']) > 0:  # nie trzeba tagować, bo tagi już są
-        return
+        return 0
 
     response = llm.invoke([
         system_message,
         HumanMessage(content=json.dumps(data))
     ])
     tags = dict(json.loads(response.content))
-    logger.debug(f"Tagged {filename} with tags: {tags}")
+    logger.debug(f"Otagowano {filename} tagami: {tags}")
 
     if "enrichment" not in data or "tags" not in data["enrichment"]:
         data["enrichment"].update({"tags": tags})
@@ -49,23 +49,23 @@ async def tag_file(filename: str):
         data["enrichment"]["tags"].append(tags)
 
     await save_json(filepath, data)
+    return 1 # helps count how many files were tagged
 
 
 async def main():
-    pass
-    '''
-    read all the .json documents asynchronously
-    check if they have tags
-    if not perform a query to the llm that will create them
-    '''
     filenames = os.listdir(PARSED_DIR)
 
     tasks = [tag_file(filename) for filename in filenames]
 
     results = await asyncio.gather(*tasks, return_exceptions=True)
+    tagged_correctly = 0
     for res in results:
         if isinstance(res, Exception):
             logger.error(f"Błąd przy tagowaniu pliku: {res!r}")
+        else:
+            tagged_correctly += res
+
+    logger.info(f"Otagowano {tagged_correctly} plików")
 
 
 if __name__ == "__main__":
