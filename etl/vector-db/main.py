@@ -236,17 +236,15 @@ def exact_transaction_lookup(transaction_ids: tuple[str, ...]) -> list[IndexedDo
         logger.debug("exact_transaction_lookup skipped: no transaction ids provided")
         return []
 
-    matched_sources: set[str] = set()
     matched_documents: list[IndexedDocument] = []
-    examined_sources = 0
     for transaction_id in transaction_ids:
         logger.debug("exact_transaction_lookup searching for transaction_id=%s", transaction_id)
-        for record in indexed_documents:
-            examined_sources += 1
-            if transaction_id == record.transaction_id and record.source not in matched_sources:
-                matched_sources.add(record.source)
-                matched_documents.append(record)
-                logger.debug("exact_transaction_lookup match=%s", to_json_log(document_log_payload(record)))
+        if transaction_id in indexed_documents_by_id:
+            record = indexed_documents_by_id[transaction_id]
+            matched_documents.append(record)
+            logger.debug("exact_transaction_lookup match=%s", to_json_log(document_log_payload(record)))
+        else:
+            logger.warning(f"Did not found the exact match for transaction ID: {transaction_id}")
 
     logger.debug(
         "exact_transaction_lookup_result=%s",
@@ -255,7 +253,6 @@ def exact_transaction_lookup(transaction_ids: tuple[str, ...]) -> list[IndexedDo
                 "transaction_ids": list(transaction_ids),
                 "matched_count": len(matched_documents),
                 "matched_sources": [record.source for record in matched_documents],
-                "examined_source_checks": examined_sources,
             }
         ),
     )
@@ -477,7 +474,7 @@ if __name__ == "__main__":
             documents.append(Document(page_content=doc, metadata=meta))
 
     indexed_documents: list[IndexedDocument] = [build_indexed_document(document) for document in documents]
-    indexed_documents_by_source: dict[str, IndexedDocument] = {record.source: record for record in indexed_documents}
+    indexed_documents_by_id: dict[str, IndexedDocument] = {record.transaction_id: record for record in indexed_documents}
     logger.info("built in-memory indexed_documents count=%d", len(indexed_documents))
 
     main()
