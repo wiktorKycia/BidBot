@@ -186,7 +186,7 @@ def plan_search(question: str, conversation_history: list[dict[str, str]]) -> Re
         logger.exception(f"The prompt formatting failed due to missing `history` or `question` variables: {e}")
         raise
 
-    logger.debug("retrieval_plan_raw_output=%s", to_json_log(payload))
+    logger.debug(f"retrieval_plan_raw_output={to_json_log(payload)}")
     if (
         not isinstance(payload, dict)
         or "transaction_ids" not in payload
@@ -238,11 +238,11 @@ def exact_transaction_lookup(transaction_ids: tuple[str, ...]) -> list[IndexedDo
 
     matched_documents: list[IndexedDocument] = []
     for transaction_id in transaction_ids:
-        logger.debug("exact_transaction_lookup searching for transaction_id=%s", transaction_id)
+        logger.debug(f"exact_transaction_lookup searching for transaction_id={transaction_id}")
         if transaction_id in indexed_documents_by_id:
             record = indexed_documents_by_id[transaction_id]
             matched_documents.append(record)
-            logger.debug("exact_transaction_lookup match=%s", to_json_log(document_log_payload(record)))
+            logger.debug(f"exact_transaction_lookup match={to_json_log(document_log_payload(record))}")
         else:
             logger.warning(f"Did not found the exact match for transaction ID: {transaction_id}")
 
@@ -352,10 +352,10 @@ def delete_collection(chroma_path: str, collection_name: str):
     try:
         chroma_client = PersistentClient(path=chroma_path)
         chroma_client.delete_collection(collection_name)
-        logger.info("deleted collection=%s from path=%s", collection_name, chroma_path)
+        logger.info(f"deleted collection={collection_name} from path={chroma_path}")
         print(f"Collection {collection_name} deleted successfully.")
     except Exception as e:
-        logger.exception("failed to delete collection=%s from path=%s", collection_name, chroma_path)
+        logger.exception(f"failed to delete collection={collection_name} from path={chroma_path}")
         raise Exception(f"Unable to delete collection: {e}") from e
 
 
@@ -366,8 +366,8 @@ def add_documents_to_vector_store(documents: list[Document], vector_store: Chrom
 
 
 def ask(question: str, conversation_history: list[dict[str, str]]) -> str:
-    logger.info("received question=%s", question)
-    logger.debug("current conversation_history=%s", to_json_log(conversation_history))
+    logger.info(f"received question={question}")
+    logger.debug(f"current conversation_history={to_json_log(conversation_history)}")
     plan, retrieved_documents = hybrid_retrieve(question, conversation_history)
 
     if not retrieved_documents:
@@ -407,7 +407,7 @@ def ask(question: str, conversation_history: list[dict[str, str]]) -> str:
     message = ""
     for response in llm.stream(messages):
         message += response.content
-    logger.info("generated answer length=%d", len(message))
+    logger.info(f"generated answer length={len(message)}")
     return message
 
 
@@ -432,7 +432,7 @@ def main():
             print(f"Assistant: {answer}")
             conversation_history.append({"user": contents, "assistant": answer})
         except Exception as e:
-            print(f"An unexpected error occurred, sorry :(")
+            print("An unexpected error occurred, sorry :(")
             logger.exception(f"Error while displaying output to the user: {e}")
             break
 
@@ -457,22 +457,22 @@ if __name__ == "__main__":
         )  # type: ignore[arg-type]
 
         documents = loader.load()
-        logger.info("loaded documents from parsed_json_path=%s count=%d", PARSED_JSON_PATH, len(documents))
+        logger.info(f"loaded documents from parsed_json_path={PARSED_JSON_PATH} count={len(documents)}")
 
         # clear collection before adding documents
         if len(existing_ids) > 0:
-            logger.info("clearing existing vector store ids count=%d", len(existing_ids))
+            logger.info(f"clearing existing vector store ids count={len(existing_ids)}")
             vector_store.delete(existing_ids)
 
         add_documents_to_vector_store(documents, vector_store)
-        logger.info("added documents to vector store count=%d", len(documents))
+        logger.info(f"added documents to vector store count={len(documents)}")
     else:
-        logger.info("loading documents from vector store count=%d", len(existing_ids))
+        logger.info(f"loading documents from vector store count={len(existing_ids)}")
         for doc, meta in zip(existing_data["documents"], existing_data["metadatas"], strict=True):
             documents.append(Document(page_content=doc, metadata=meta))
 
     indexed_documents: list[IndexedDocument] = [build_indexed_document(document) for document in documents]
     indexed_documents_by_id: dict[str, IndexedDocument] = {record.transaction_id: record for record in indexed_documents}
-    logger.info("built in-memory indexed_documents count=%d", len(indexed_documents))
+    logger.info(f"built in-memory indexed_documents count={len(indexed_documents)}")
 
     main()
