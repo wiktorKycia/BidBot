@@ -1,15 +1,6 @@
-import os
+
 from pathlib import Path
-from dotenv import load_dotenv
-
-DOTENV_PATH = Path(__file__).resolve().parent.parent.parent / ".env"
-load_dotenv(DOTENV_PATH)
-
-def require_openai_api_key() -> str:
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        raise RuntimeError(f"OPENAI_API_KEY is not set. Configure it in the environment or in {DOTENV_PATH}.")
-    return api_key
+from etl.settings import MODEL, require_openai_api_key
 
 
 OPENAI_API_KEY = require_openai_api_key()
@@ -20,7 +11,7 @@ PARSED_JSON_PATH = DATA_PATH / "parsed"
 LOG_DIR = Path(__file__).resolve().parent / "logs"
 LOG_PATH = LOG_DIR / "vector_db.log"
 
-MODEL = "gpt-5.4-nano"
+
 
 
 def main():

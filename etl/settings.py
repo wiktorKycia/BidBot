@@ -1,5 +1,7 @@
+import os
 import logging.config
 from pathlib import Path
+from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = BASE_DIR / "data"
@@ -13,6 +15,10 @@ MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024  # 25 MB - max rozmiar pobieranego pliku
 MAX_UNCOMPRESSED_SIZE = 250 * 1024 * 1024  # 250 MB - max waga po rozpakowaniu
 MAX_ZIP_FILES = 1000  # Max ilość plików wewnątrz zipa
 MAX_ZIP_RATIO = 100  # Max stosunek rozmiaru rozpakowanego do oryginalnego
+MODEL = "gpt-5.4-nano"
+
+DOTENV_PATH = Path(__file__).resolve().parent.parent.parent / ".env"
+load_dotenv(DOTENV_PATH)
 
 for d in [RAW_DIR, PARSED_DIR, ATTACHMENTS_DIR, LOG_DIR]:
     if not d.exists():
@@ -63,3 +69,9 @@ DEFAULT_HEADERS = {
 
 def setup_logging():
     logging.config.dictConfig(LOGGING_CONFIG)
+
+def require_openai_api_key() -> str:
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise RuntimeError(f"OPENAI_API_KEY is not set. Configure it in the environment or in {DOTENV_PATH}.")
+    return api_key
