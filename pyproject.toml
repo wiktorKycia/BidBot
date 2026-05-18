@@ -19,8 +19,9 @@ dependencies = [
     "langchain-community>=0.4.1",
     "langchain-openai>=1.2.1",
     "lxml>=6.1.0",
-    "panel>=1.8.10",
-    "requests>=2.33.1",
+    "requests==2.34.1",
+    "tzdata>=2026.2",
+
 ]
 
 [dependency-groups]
@@ -29,7 +30,7 @@ dev = [
 ]
 
 [tool.ruff]
-line-length = 150
+line-length = 152
 target-version = "py314"
 
 [tool.ruff.lint]

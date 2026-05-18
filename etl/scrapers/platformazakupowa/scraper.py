@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import random
 import re
 import zipfile
 from datetime import UTC, datetime
@@ -7,6 +8,7 @@ from pathlib import Path
 from urllib.parse import urljoin
 from zoneinfo import ZoneInfo
 
+import aiofiles
 import aiohttp
 import backoff
 from aiohttp import TCPConnector
@@ -24,6 +26,9 @@ from etl.settings import (
     RAW_DIR,
     setup_logging,
 )
+from etl.settings import (
+    DEFAULT_HEADERS as HEADERS,
+)
 from etl.utils import save_json, save_to_file
 
 setup_logging()
@@ -33,10 +38,12 @@ BASE_URL = "https://platformazakupowa.pl"
 ALL_RESOURCES_URL = "https://platformazakupowa.pl/all"
 
 ORDER_TYPE_DICT = {
-    "Dostawa": "Dostawy",  # na platformie zakupowej rodzaj "Dostawy" jest już w liczbie mnogiej, więc wg. mnie można zakomentować,
-    # żeby nie rzucało warningów niepotrzebnie
+    "Dostawa": "Dostawy",
+    "Dostawy": "Dostawy",
     "Usługa": "Usługi",
+    "Usługi": "Usługi",
     "Robota budowlana": "Roboty budowlane",
+    "Roboty budowlane": "Roboty budowlane",
 }
 
 
@@ -77,23 +84,49 @@ def sanitize_filename(filename: str, fallback: str = "attachment") -> str:
     return sanitized
 
 
-@backoff.on_exception(backoff.expo, (aiohttp.ClientError, asyncio.TimeoutError, aiohttp.ClientResponseError, DownloadIntegrityError), max_tries=3)
-async def download_file(session: aiohttp.ClientSession, url: str, target_dir: Path, filename: str, semaphore: asyncio.Semaphore):
+@backoff.on_exception(
+    backoff.expo,
+    (aiohttp.ClientError, asyncio.TimeoutError, aiohttp.ClientResponseError, DownloadIntegrityError),
+    max_tries=3,
+)
+async def download_file(
+    session: aiohttp.ClientSession,
+    url: str,
+    target_dir: Path,
+    filename: str,
+    semaphore: asyncio.Semaphore,
+    referer_url: str,
+):
     file_path = target_dir / filename
     if file_path.exists() and file_path.stat().st_size > 0:
         return True
 
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:150.0) Gecko/20100101 Firefox/150.0",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "pl,en;q=0.9,en-US;q=0.8",
+        "Upgrade-Insecure-Requests": "1",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "same-origin",
+        "Sec-Fetch-User": "?1",
+        "Referer": referer_url,
+    }
+
     async with semaphore:
+        await asyncio.sleep(random.uniform(2.0, 4.0))
+
         try:
-            async with session.get(url, timeout=60) as response:
+            async with session.get(url, headers=headers, timeout=60) as response:
                 response.raise_for_status()
                 content_length = int(response.headers.get("Content-Length", 0))
+
                 if content_length > MAX_ATTACHMENT_SIZE:
                     logger.warning(f"Plik odrzucony (nagłówek): {filename} przekracza {MAX_ATTACHMENT_SIZE} bajtów.")
                     return False
 
                 downloaded_size = 0
-                with open(file_path, "wb") as f:
+                async with aiofiles.open(file_path, "wb") as f:
                     async for chunk in response.content.iter_chunked(64 * 1024):
                         downloaded_size += len(chunk)
 
@@ -102,7 +135,7 @@ async def download_file(session: aiohttp.ClientSession, url: str, target_dir: Pa
                             logger.warning(f"Plik odrzucony (stream): {filename} przekroczył limit wielkości w trakcie pobierania.")
                             return False
 
-                        f.write(chunk)
+                        await f.write(chunk)
 
             if file_path.suffix.lower() == ".zip":
                 success = await asyncio.to_thread(safe_extract_zip, file_path, target_dir)
@@ -164,6 +197,7 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
     organisation: str | None = None
     publication_date_dt: datetime | None = None
     order_type: str | None = None
+    reference_number: str | None = None
 
     li_items = notice_doc.find_all("li", class_="proceeding-info-list-item")
     for li in li_items:
@@ -182,7 +216,7 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
             if len(texts) > 1:
                 order_type = " ".join(texts[1:]).strip()
                 if order_type in ORDER_TYPE_DICT:
-                    order_type = ORDER_TYPE_DICT[order_type]  # zamiana na liczbę mnogą
+                    order_type = ORDER_TYPE_DICT[order_type]
                 else:
                     logger.warning(f"Nieznany rodzaj zamówienia: {order_type}, dostępne rodzaje: {' '.join(ORDER_TYPE_DICT.keys())}")
 
@@ -196,6 +230,11 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
                     publication_date_dt: datetime = parsed_dt.replace(tzinfo=ZoneInfo("Europe/Warsaw")).astimezone(UTC)
                 except ValueError:
                     logger.warning("Błąd parsowania daty publikacji: %r", raw_date)
+
+        elif "Numer" in label_text or "Znak" in label_text:
+            texts = list(li.stripped_strings)
+            if len(texts) > 1:
+                reference_number = " ".join(texts[1:]).strip()
 
     attachments_list = []
     table = notice_doc.find("table", {"id": "allAttachmentsTable"})
@@ -230,7 +269,7 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
 
             tasks = []
             for att in to_download:
-                t = download_file(session, att["url"], notice_dir, att["filename"], semaphore)
+                t = download_file(session, att["url"], notice_dir, att["filename"], semaphore, referer_url=notice_url)
                 tasks.append(t)
 
             results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -252,6 +291,7 @@ async def process_notice_details(session: aiohttp.ClientSession, notice_url: str
         "publication_date_dt": publication_date_dt,
         "description": desc,
         "order_type": order_type,
+        "reference_number": reference_number,
         "raw_html": notice_doc.prettify(),
         "attachments": attachments_list,
     }
@@ -263,22 +303,31 @@ def safe_extract_zip(zip_path: Path, extract_dir: Path) -> bool:
             infolist = zf.infolist()
 
             if len(infolist) > MAX_ZIP_FILES:
+                logger.warning(f"ZIP {zip_path.name}: Za dużo plików ({len(infolist)} > {MAX_ZIP_FILES})")
                 return False
 
             total_size = 0
             for info in infolist:
                 total_size += info.file_size
                 if total_size > MAX_UNCOMPRESSED_SIZE:
+                    logger.warning(f"ZIP {zip_path.name}: Za duży po rozpakowaniu ({total_size} bajtów)")
                     return False
 
             compressed_size = zip_path.stat().st_size or 1
-            if (total_size / compressed_size) > MAX_ZIP_RATIO:
+            ratio = total_size / compressed_size
+            if ratio > MAX_ZIP_RATIO:
+                logger.warning(f"ZIP {zip_path.name}: Podejrzany stopień kompresji (zip-bomb ratio: {ratio:.2f})")
                 return False
 
             zf.extractall(path=extract_dir)
             return True
 
     except zipfile.BadZipFile:
+        rozmiar = zip_path.stat().st_size if zip_path.exists() else 0
+        logger.error(f"ZIP {zip_path.name}: Plik jest uszkodzony lub nie jest archiwum ZIP (rozmiar: {rozmiar} bajtów).")
+        return False
+    except Exception as e:
+        logger.error(f"ZIP {zip_path.name}: Nieoczekiwany błąd dekompresji: {e}")
         return False
 
 
@@ -324,16 +373,42 @@ async def process_page(session: aiohttp.ClientSession, page_number: int, semapho
         if details.get("publication_date_dt"):
             pub_date = details["publication_date_dt"].isoformat()
 
+        formatted_attachments = []
+        for att in details.get("attachments", []):
+            formatted_attachments.append(
+                {
+                    "url": att.get("url"),
+                    "filename": att.get("filename"),
+                    "local_path": att.get("local_path"),
+                    "downloaded": att.get("downloaded", False),
+                    "is_zip": att.get("is_zip", False),
+                    "extracted_status": att.get("extracted_status"),
+                }
+            )
+
+        issuers = []
+        if details.get("client_name"):
+            issuers.append(
+                {
+                    "title": details.get("client_name"),
+                    "address": {"street": None, "city": None, "postalCode": None, "country": None},
+                }
+            )
+
         parsed_data = {
             "id": notice_id,
-            "url": notice_url,
+            "enrichment": {"tags": [], "industry": None, "nuts3": []},
+            "createdAt": None,
+            "publicationDate": pub_date,
+            "submittingOffersDeadline": deadline_dt.isoformat(),
+            "cpvCodes": [],
+            "issuers": issuers,
             "title": a_tag.text.strip(),
-            "publication_date": pub_date,
-            "submitting_offers_date": deadline_dt.isoformat(),
-            "client_name": details.get("client_name"),
-            "order_type": details.get("order_type"),
             "description": details.get("description"),
-            "attachments": details.get("attachments"),
+            "referenceNumber": details.get("reference_number"),
+            "contractNature": details.get("order_type"),
+            "scraper_url": notice_url,
+            "scraper_attachments": formatted_attachments,
         }
 
         await save_to_file(RAW_DIR / f"{notice_id}.html", details["raw_html"])
@@ -377,12 +452,12 @@ async def get_pages_number(session: aiohttp.ClientSession, semaphore: asyncio.Se
 
 
 async def main():
-    semaphore = asyncio.Semaphore(3)
+    semaphore = asyncio.Semaphore(1)
 
     resolver = AsyncResolver(nameservers=["1.1.1.1", "8.8.8.8"])
     connector = TCPConnector(resolver=resolver)
 
-    async with aiohttp.ClientSession(connector=connector) as session:
+    async with aiohttp.ClientSession(connector=connector, headers=HEADERS) as session:
         total_pages = await get_pages_number(session, semaphore)
         logger.info(f"Znaleziono stron: {total_pages}")
 
