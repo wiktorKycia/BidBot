@@ -1,16 +1,14 @@
 import asyncio
 import json
 import os
-from pathlib import Path
 import logging
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
-from etl.utils import read_json
+from etl.utils import read_json, save_json
 from etl.settings import setup_logging, require_openai_api_key, MODEL, PARSED_DIR
 
 
 OPENAI_API_KEY = require_openai_api_key()
-
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -33,15 +31,24 @@ Output: ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5"]
 """)
 
 async def tag_file(filename: str):
-    data: dict = await read_json(PARSED_DIR / filename)
+    filepath = PARSED_DIR / filename
+    data: dict = await read_json(filepath)
     if len(data['enrichment']['tags']) > 0:  # nie trzeba tagować, bo tagi już są
-        return None
+        return
+
     response = llm.invoke([
         system_message,
         HumanMessage(content=json.dumps(data))
     ])
     tags = dict(json.loads(response.content))
+    logger.debug(f"Tagged {filename} with tags: {tags}")
 
+    if "enrichment" not in data or "tags" not in data["enrichment"]:
+        data["enrichment"].update({"tags": tags})
+    else:
+        data["enrichment"]["tags"].append(tags)
+
+    await save_json(filepath, data)
 
 
 async def main():
