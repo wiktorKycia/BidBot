@@ -180,10 +180,10 @@ def plan_search(question: str, conversation_history: list[dict[str, str]]) -> Re
         response = planner.invoke(planning_prompt.format_messages(history=history_text, question=question)).content.strip()
         payload = json.loads(response)
     except (AttributeError, json.JSONDecodeError, TypeError) as e:
-        logger.error(f"Wrong response type from planner: {e}")
+        logger.exception(f"Wrong response type from planner: {e}")
         raise
     except KeyError as e:
-        logger.error(f"The prompt formatting failed due to missing `history` or `question` variables: {e}")
+        logger.exception(f"The prompt formatting failed due to missing `history` or `question` variables: {e}")
         raise
 
     logger.debug("retrieval_plan_raw_output=%s", to_json_log(payload))
@@ -194,7 +194,7 @@ def plan_search(question: str, conversation_history: list[dict[str, str]]) -> Re
         or "needs_search" not in payload
         or "top_k" not in payload
     ):
-        logger.error("The planner llm did not return the correct data format!")
+        logger.exception("The planner llm did not return the correct data format!")
         raise LLMReturnedFaultyDataFormatError("The planner llm did not return the correct data format!")
 
     # if a transaction id is present, match it directly against the indexed documents
