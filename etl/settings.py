@@ -55,6 +55,7 @@ LOGGING_CONFIG = {
             "propagate": True,
         },
         "aiohttp": {"level": "WARNING"},
+        "httpx": {"level": "WARNING"},
     },
 }
 
