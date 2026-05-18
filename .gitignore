@@ -1,13 +1,9 @@
 .venv
 .idea
 __pycache__
-etl/data
-/etl/scrapers/ezamowienia/data/parsed
-/etl/scrapers/ezamowienia/data/raw
 
-/etl/scrapers/platformazakupowa/data
 data
-/logs
-/etl/scrapers/platformazakupowa/logs
-/etl/scrapers/platformaofertowa/logs
-/etl/scrapers/ezamowienia/logs
+data_old
+.env
+logs
+chroma_langchain_db/
