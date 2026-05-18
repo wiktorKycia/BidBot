@@ -17,7 +17,7 @@ MAX_ZIP_FILES = 1000  # Max ilość plików wewnątrz zipa
 MAX_ZIP_RATIO = 100  # Max stosunek rozmiaru rozpakowanego do oryginalnego
 MODEL = "gpt-5.4-nano"
 
-DOTENV_PATH = Path(__file__).resolve().parent.parent.parent / ".env"
+DOTENV_PATH = Path(__file__).resolve().parent.parent / ".env"
 load_dotenv(DOTENV_PATH)
 
 for d in [RAW_DIR, PARSED_DIR, ATTACHMENTS_DIR, LOG_DIR]:
