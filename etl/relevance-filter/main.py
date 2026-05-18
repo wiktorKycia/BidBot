@@ -1,12 +1,13 @@
 import asyncio
 import json
-import os
 import logging
+import os
+
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
-from etl.utils import read_json, save_json
-from etl.settings import setup_logging, require_openai_api_key, MODEL, PARSED_DIR
 
+from etl.settings import MODEL, PARSED_DIR, require_openai_api_key, setup_logging
+from etl.utils import read_json, save_json
 
 OPENAI_API_KEY = require_openai_api_key()
 
@@ -15,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 llm = ChatOpenAI(model=MODEL, api_key=OPENAI_API_KEY)
 system_message = SystemMessage("""
-You are an expert in public procurement and document indexing. 
+You are an expert in public procurement and document indexing.
 Your task is to analyze a JSON document representing a public procurement offer and generate a list of 3 to 5 high-quality keywords.
 
 Guidelines for keywords:
@@ -30,29 +31,27 @@ Input: A JSON document of a procurement offer.
 Output: ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5"]
 """)
 
+
 async def tag_file(filename: str) -> int:
     filepath = PARSED_DIR / filename
     data: dict = await read_json(filepath)
-    if len(data['enrichment']['tags']) > 0:  # nie trzeba tagować, bo tagi już są
+    if len(data["enrichment"]["tags"]) > 0:  # nie trzeba tagować, bo tagi już są
         return 0
 
-    response = llm.invoke([
-        system_message,
-        HumanMessage(content=json.dumps(data))
-    ])
+    response = llm.invoke([system_message, HumanMessage(content=json.dumps(data))])
     tags = list(json.loads(response.content))
     logger.debug(f"Otagowano {filename} tagami: {tags}")
 
     if "enrichment" not in data:
         data["enrichment"] = {}
-        
+
     if "tags" not in data["enrichment"]:
         data["enrichment"]["tags"] = tags
     else:
         data["enrichment"]["tags"].extend(tags)
 
     await save_json(filepath, data)
-    return 1 # helps count how many files were tagged
+    return 1  # helps count how many files were tagged
 
 
 async def main():
