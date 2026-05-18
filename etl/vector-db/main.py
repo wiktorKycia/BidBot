@@ -1,7 +1,6 @@
 import json
 import logging
 import re
-from dataclasses import dataclass
 from logging.handlers import RotatingFileHandler
 from operator import itemgetter
 from typing import Any
@@ -15,6 +14,7 @@ from langchain_core.prompts import ChatPromptTemplate, SystemMessagePromptTempla
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from prompts import main_system_message_template, use_search_system_message_template
 from etl.settings import require_openai_api_key, MODEL, PARSED_DIR, LOG_DIR
+from models import RetrievalPlan, IndexedDocument
 
 OPENAI_API_KEY = require_openai_api_key()
 
@@ -35,23 +35,6 @@ class LLMReturnedFaultyDataFormatError(Exception):
     """Raised when the llm returns unexpected data format"""
 
     pass
-
-
-@dataclass(frozen=True)
-class RetrievalPlan:
-    needs_search: bool
-    search_query: str
-    transaction_ids: tuple[str, ...]
-    top_k: int
-
-
-@dataclass(frozen=True)
-class IndexedDocument:
-    document: Any
-    source: str  # file absolute filepath to .json document
-    title: str
-    transaction_id: str
-    raw_text: str
 
 
 def configure_logger() -> logging.Logger:
