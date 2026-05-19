@@ -17,7 +17,7 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from etl.llms import MODEL, require_openai_api_key
 from etl.loggers import setup_logging
 from etl.scrapers.settings import PARSED_DIR
-from etl.vector_db.models import IndexedDocument, RetrievalPlan, SourceType
+from etl.vector_db.models import IndexedDocument, RetrievalPlan
 from etl.vector_db.prompts import main_system_message_template, use_search_system_message_template
 from etl.utils import read_json
 
@@ -423,7 +423,7 @@ if __name__ == "__main__":
             vector_store.delete(existing_ids)
 
         async def apply_metadata(docs):
-            tasks = [add_metadata(document) for document in documents]
+            tasks = [add_metadata(document) for document in docs]
             return await asyncio.gather(*tasks, return_exceptions=True)
 
         results = asyncio.run(apply_metadata(documents))
@@ -435,8 +435,6 @@ if __name__ == "__main__":
                 logger.exception(f"Error while adding metadata to document: {res!r}")
             else:
                 documents.append(res)
-
-
 
         add_documents_to_vector_store(documents, vector_store)
         logger.info(f"added documents to vector store count={len(documents)}")

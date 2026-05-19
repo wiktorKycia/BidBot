@@ -1,18 +1,12 @@
 from dataclasses import dataclass
 from typing import Any
-from enum import Enum
-
-class SourceType(Enum):
-    JSON = 1
-    ATTACHMENT = 2
-
 
 @dataclass(frozen=True)
 class DocumentMetadata:
     offer_id: str
     seq_num: int    # like a chunk index
     source: str
-    source_type: SourceType
+    source_type: str
     title: str
 
 
