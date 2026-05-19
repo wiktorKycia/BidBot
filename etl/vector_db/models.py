@@ -20,7 +20,7 @@ class DocumentMetadata:
 class RetrievalPlan:
     needs_search: bool
     search_query: str
-    transaction_ids: tuple[str, ...]
+    offer_ids: tuple[str, ...]
     top_k: int
 
 
@@ -29,7 +29,7 @@ class IndexedDocument:
     document: Any
     source: str  # file absolute filepath to .json document
     title: str
-    transaction_id: str
+    offer_id: str
     raw_text: str
 
 @dataclass(frozen=True)
