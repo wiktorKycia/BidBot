@@ -1,7 +1,6 @@
 import json
 import logging
 import re
-from logging.handlers import RotatingFileHandler
 from operator import itemgetter
 from pathlib import Path
 from typing import Any
@@ -13,10 +12,12 @@ from langchain_community.document_loaders.directory import DirectoryLoader
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate, SystemMessagePromptTemplate
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-from models import IndexedDocument, RetrievalPlan
-from prompts import main_system_message_template, use_search_system_message_template
 
-from etl.settings import LOG_DIR, MODEL, PARSED_DIR, require_openai_api_key
+from etl.llms import MODEL, require_openai_api_key
+from etl.loggers import setup_logging
+from etl.scrapers.settings import PARSED_DIR
+from etl.vector_db.models import IndexedDocument, RetrievalPlan
+from etl.vector_db.prompts import main_system_message_template, use_search_system_message_template
 
 OPENAI_API_KEY = require_openai_api_key()
 
@@ -25,8 +26,6 @@ MODEL_EMBEDDINGS = "text-embedding-3-small"
 FRESH_DATA_RELOAD = False  # if set to True, the data will be first deleted, then loaded, for testing purposes
 
 CHROMA_DB_PATH = Path("chroma_langchain_db")
-
-LOG_PATH = LOG_DIR / "vector_db.log"
 
 MAX_CONTEXT_DOCS = 5
 MAX_CHROMA_BATCH = 5461
@@ -37,23 +36,6 @@ class LLMReturnedFaultyDataFormatError(Exception):
     """Raised when the llm returns unexpected data format"""
 
     pass
-
-
-def configure_logger() -> logging.Logger:
-    logger = logging.getLogger("bidbot.vector_db")
-    if logger.handlers:
-        return logger
-
-    logger.setLevel(logging.DEBUG)
-    logger.propagate = False
-
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
-
-    handler = RotatingFileHandler(LOG_PATH, maxBytes=5_000_000, backupCount=3, encoding="utf-8")
-    handler.setLevel(logging.DEBUG)
-    handler.setFormatter(logging.Formatter("%(asctime)s | %(levelname)s | %(message)s"))
-    logger.addHandler(handler)
-    return logger
 
 
 def to_json_log(payload: Any) -> str:
@@ -407,7 +389,8 @@ def main():
 
 
 if __name__ == "__main__":
-    logger = configure_logger()
+    setup_logging()
+    logger = logging.getLogger("bidbot.vector_db")
 
     llm = ChatOpenAI(model=MODEL)
 
