@@ -1,15 +1,11 @@
 import json
 import logging
-import os
 import re
-from dataclasses import dataclass
 from logging.handlers import RotatingFileHandler
 from operator import itemgetter
-from pathlib import Path
 from typing import Any
 
 from chromadb import PersistentClient
-from dotenv import load_dotenv
 from langchain_chroma import Chroma
 from langchain_community.document_loaders import JSONLoader
 from langchain_community.document_loaders.directory import DirectoryLoader
@@ -17,36 +13,20 @@ from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate, SystemMessagePromptTemplate
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from prompts import main_system_message_template, use_search_system_message_template
-
-DOTENV_PATH = Path(__file__).resolve().parent.parent.parent / ".env"
-load_dotenv(DOTENV_PATH)
-
-
-def require_openai_api_key() -> str:
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        raise RuntimeError(f"OPENAI_API_KEY is not set. Configure it in the environment or in {DOTENV_PATH}.")
-    return api_key
-
+from etl.settings import require_openai_api_key, MODEL, PARSED_DIR, LOG_DIR
+from models import RetrievalPlan, IndexedDocument
 
 OPENAI_API_KEY = require_openai_api_key()
 
-MODEL = "gpt-4o-mini"
 MODEL_EMBEDDINGS = "text-embedding-3-small"
 
 FRESH_DATA_RELOAD = False  # if set to True, the data will be first deleted, then loaded, for testing purposes
 
-DATA_PATH = Path(__file__).resolve().parent.parent.parent / "data"
-PARSED_JSON_PATH = DATA_PATH / "parsed"
-ATTACHMENTS_PATH = DATA_PATH / "attachments"
-
 CHROMA_DB_PATH = Path("chroma_langchain_db")
 
-LOG_DIR = Path(__file__).resolve().parent / "logs"
 LOG_PATH = LOG_DIR / "vector_db.log"
 
 MAX_CONTEXT_DOCS = 5
-MAX_SEMANTIC_RESULTS = 4
 MAX_CHROMA_BATCH = 5461
 TRANSACTION_ID_PATTERN = re.compile(r"\b(?:\d{6,}|[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12})\b")
 
@@ -55,23 +35,6 @@ class LLMReturnedFaultyDataFormatError(Exception):
     """Raised when the llm returns unexpected data format"""
 
     pass
-
-
-@dataclass(frozen=True)
-class RetrievalPlan:
-    needs_search: bool
-    search_query: str
-    transaction_ids: tuple[str, ...]
-    top_k: int
-
-
-@dataclass(frozen=True)
-class IndexedDocument:
-    document: Any
-    source: str  # file absolute filepath to .json document
-    title: str
-    transaction_id: str
-    raw_text: str
 
 
 def configure_logger() -> logging.Logger:
@@ -457,11 +420,11 @@ if __name__ == "__main__":
 
     if FRESH_DATA_RELOAD or len(existing_ids) == 0:
         loader = DirectoryLoader(
-            str(PARSED_JSON_PATH), glob="**/*.json", loader_cls=JSONLoader, loader_kwargs={"jq_schema": ".", "text_content": False}
+            str(PARSED_DIR), glob="**/*.json", loader_cls=JSONLoader, loader_kwargs={"jq_schema": ".", "text_content": False}
         )  # type: ignore[arg-type]
 
         documents = loader.load()
-        logger.info(f"loaded documents from parsed_json_path={PARSED_JSON_PATH} count={len(documents)}")
+        logger.info(f"loaded documents from parsed_json_path={PARSED_DIR} count={len(documents)}")
 
         # clear collection before adding documents
         if len(existing_ids) > 0:
