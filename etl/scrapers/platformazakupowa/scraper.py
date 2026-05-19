@@ -15,6 +15,7 @@ from aiohttp import TCPConnector
 from aiohttp.resolver import AsyncResolver
 from bs4 import BeautifulSoup
 
+from etl.loggers import setup_logging
 from etl.scrapers.settings import (
     ATTACHMENTS_DIR,
     MAX_ATTACHMENT_SIZE,
@@ -24,7 +25,6 @@ from etl.scrapers.settings import (
     MAX_ZIP_RATIO,
     PARSED_DIR,
     RAW_DIR,
-    setup_logging,
 )
 from etl.scrapers.settings import (
     DEFAULT_HEADERS as HEADERS,
