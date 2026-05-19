@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import re
@@ -16,8 +17,9 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from etl.llms import MODEL, require_openai_api_key
 from etl.loggers import setup_logging
 from etl.scrapers.settings import PARSED_DIR
-from etl.vector_db.models import IndexedDocument, RetrievalPlan
+from etl.vector_db.models import IndexedDocument, RetrievalPlan, SourceType
 from etl.vector_db.prompts import main_system_message_template, use_search_system_message_template
+from etl.utils import read_json
 
 OPENAI_API_KEY = require_openai_api_key()
 
@@ -63,6 +65,14 @@ def extract_offer_ids_from_text(*values: str) -> tuple[str, ...]:
     for value in values:
         ids.extend(TRANSACTION_ID_PATTERN.findall(value))
     return tuple(unique_strings(ids))
+
+
+async def add_metadata(document: Document) -> Document:
+    offer = await read_json(document.metadata["source"])
+    document.metadata["offer_id"] = offer["id"]
+    document.metadata["source_type"] = SourceType.JSON
+    document.metadata["title"] = offer["title"]
+    return document
 
 
 def build_indexed_document(document: Document) -> IndexedDocument:
@@ -393,15 +403,12 @@ if __name__ == "__main__":
     logger = logging.getLogger("vector_db")
 
     llm = ChatOpenAI(model=MODEL)
-
     embeddings = OpenAIEmbeddings(model=MODEL_EMBEDDINGS)
 
     vector_store = Chroma(collection_name="bid_info_json", embedding_function=embeddings, persist_directory=CHROMA_DB_PATH)
 
     existing_data = vector_store.get()
-
     existing_ids = existing_data["ids"]
-
     documents = []
 
     if FRESH_DATA_RELOAD or len(existing_ids) == 0:
@@ -414,6 +421,20 @@ if __name__ == "__main__":
         if len(existing_ids) > 0:
             logger.info(f"clearing existing vector store ids count={len(existing_ids)}")
             vector_store.delete(existing_ids)
+
+        tasks = [add_metadata(document) for document in documents]
+
+        results = asyncio.gather(*tasks, return_exceptions=True)
+
+        documents = []
+
+        for res in results:
+            if isinstance(res, Exception):
+                logger.exception(f"Error while adding metadata to document: {res!r}")
+            else:
+                documents.append(res)
+
+
 
         add_documents_to_vector_store(documents, vector_store)
         logger.info(f"added documents to vector store count={len(documents)}")
