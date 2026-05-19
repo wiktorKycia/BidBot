@@ -17,3 +17,16 @@ class IndexedDocument:
     title: str
     transaction_id: str
     raw_text: str
+
+@dataclass(frozen=True)
+class OfferRecord:
+    pass
+
+
+@dataclass(frozen=True)
+class AttachmentRecord:
+    pass
+
+@dataclass(frozen=True)
+class ChunkRecord:
+    pass
