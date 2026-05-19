@@ -48,18 +48,18 @@ def document_log_payload(record: Any) -> dict[str, Any]:
     return {
         "source": record.source,
         "title": record.title,
-        "offer_id": record.offer_id,
+        "transaction_id": record.transaction_id,
         # "raw_text": record.raw_text,
     }
 
 
 def unique_strings(values: list[str]) -> list[str]:
-    """removes duplicates while preserving order. It is used to keep offer IDs from repeating"""
+    """removes duplicates while preserving order. It is used to keep transaction IDs from repeating"""
     return list(dict.fromkeys(values))
 
 
-def extract_offer_ids_from_text(*values: str) -> tuple[str, ...]:
-    """scans one or more text blobs and returns all matching offer IDs. It is used on the question, history, raw document text
+def extract_transaction_ids_from_text(*values: str) -> tuple[str, ...]:
+    """scans one or more text blobs and returns all matching transaction IDs. It is used on the question, history, raw document text
     and source metadata"""
     ids: list[str] = []
     for value in values:
@@ -88,7 +88,7 @@ def build_indexed_document(document: Document) -> IndexedDocument:
     # extract a source path from metadata
     source = payload.get("scraper_url")
 
-    return IndexedDocument(document=document, source=source, title=payload["title"], offer_id=payload["id"], raw_text=raw_text)
+    return IndexedDocument(document=document, source=source, title=payload["title"], transaction_id=payload["id"], raw_text=raw_text)
 
 
 def format_indexed_document(record: IndexedDocument) -> str:
@@ -97,8 +97,8 @@ def format_indexed_document(record: IndexedDocument) -> str:
         f"Source: {record.source}",
         f"Title: {record.title}",
     ]
-    if record.offer_id:
-        lines.append(f"Transaction ID: {record.offer_id}")
+    if record.transaction_id:
+        lines.append(f"Transaction ID: {record.transaction_id}")
     lines.append("Content:")
     lines.append(record.raw_text)
     return "\n".join(lines)
@@ -122,7 +122,7 @@ def plan_search(question: str, conversation_history: list[dict[str, str]]) -> Re
 
     - whether retrieval is needed,
     - a focused search query,
-    - any offer IDs,
+    - any transaction IDs,
     - the desired top_k.
     """
     history_text = format_history(conversation_history)
@@ -150,7 +150,7 @@ def plan_search(question: str, conversation_history: list[dict[str, str]]) -> Re
     logger.debug(f"retrieval_plan_raw_output={to_json_log(payload)}")
     if (
         not isinstance(payload, dict)
-        or "offer_ids" not in payload
+        or "transaction_ids" not in payload
         or "search_query" not in payload
         or "needs_search" not in payload
         or "top_k" not in payload
@@ -158,12 +158,12 @@ def plan_search(question: str, conversation_history: list[dict[str, str]]) -> Re
         logger.exception("The planner llm did not return the correct data format!")
         raise LLMReturnedFaultyDataFormatError("The planner llm did not return the correct data format!")
 
-    # if a offer id is present, match it directly against the indexed documents
-    detected_ids = extract_offer_ids_from_text(question, format_history(conversation_history, 2))
-    planned_ids = payload.get("offer_ids", [])
+    # if a transaction id is present, match it directly against the indexed documents
+    detected_ids = extract_transaction_ids_from_text(question, format_history(conversation_history, 2))
+    planned_ids = payload.get("transaction_ids", [])
     planned_ids = [str(item) for item in planned_ids if str(item).strip()]
 
-    offer_ids = unique_strings(list(detected_ids) + planned_ids)
+    transaction_ids = unique_strings(list(detected_ids) + planned_ids)
     search_query = str(payload.get("search_query", "")).strip()
     if not search_query:
         search_query = question.strip()
@@ -174,7 +174,7 @@ def plan_search(question: str, conversation_history: list[dict[str, str]]) -> Re
         top_k = 3
     top_k = min(top_k, MAX_CONTEXT_DOCS)
 
-    if offer_ids:
+    if transaction_ids:
         needs_search = True
 
     logger.debug(
@@ -183,35 +183,35 @@ def plan_search(question: str, conversation_history: list[dict[str, str]]) -> Re
             {
                 "needs_search": needs_search,
                 "search_query": search_query,
-                "offer_ids": list(offer_ids),
+                "transaction_ids": list(transaction_ids),
                 "top_k": top_k,
             }
         ),
     )
 
-    return RetrievalPlan(needs_search=needs_search, search_query=search_query, offer_ids=tuple(offer_ids), top_k=top_k)
+    return RetrievalPlan(needs_search=needs_search, search_query=search_query, transaction_ids=tuple(transaction_ids), top_k=top_k)
 
 
-def exact_offer_lookup(offer_ids: tuple[str, ...]) -> list[IndexedDocument]:
-    if not offer_ids:
-        logger.debug("exact_offer_lookup skipped: no offer ids provided")
+def exact_transaction_lookup(transaction_ids: tuple[str, ...]) -> list[IndexedDocument]:
+    if not transaction_ids:
+        logger.debug("exact_transaction_lookup skipped: no transaction ids provided")
         return []
 
     matched_documents: list[IndexedDocument] = []
-    for offer_id in offer_ids:
-        logger.debug(f"exact_offer_lookup searching for offer_id={offer_id}")
-        if offer_id in indexed_documents_by_id:
-            record = indexed_documents_by_id[offer_id]
+    for transaction_id in transaction_ids:
+        logger.debug(f"exact_transaction_lookup searching for transaction_id={transaction_id}")
+        if transaction_id in indexed_documents_by_id:
+            record = indexed_documents_by_id[transaction_id]
             matched_documents.append(record)
-            logger.debug(f"exact_offer_lookup match={to_json_log(document_log_payload(record))}")
+            logger.debug(f"exact_transaction_lookup match={to_json_log(document_log_payload(record))}")
         else:
-            logger.warning(f"Did not found the exact match for offer ID: {offer_id}")
+            logger.warning(f"Did not found the exact match for transaction ID: {transaction_id}")
 
     logger.debug(
-        "exact_offer_lookup_result=%s",
+        "exact_transaction_lookup_result=%s",
         to_json_log(
             {
-                "offer_ids": list(offer_ids),
+                "transaction_ids": list(transaction_ids),
                 "matched_count": len(matched_documents),
                 "matched_sources": [record.source for record in matched_documents],
             }
@@ -275,7 +275,7 @@ def semantic_lookup(search_query: str, limit: int) -> list[IndexedDocument]:
 
 def hybrid_retrieve(question: str, conversation_history: list[dict[str, str]]) -> tuple[RetrievalPlan, list[IndexedDocument]]:
     plan = plan_search(question, conversation_history)
-    exact_matches = exact_offer_lookup(plan.offer_ids)
+    exact_matches = exact_transaction_lookup(plan.transaction_ids)
 
     if not plan.needs_search and not exact_matches:
         logger.debug("hybrid_retrieve returning early with no search and no exact matches")
@@ -344,7 +344,7 @@ def ask(question: str, conversation_history: list[dict[str, str]]) -> str:
                 "plan": {
                     "needs_search": plan.needs_search,
                     "search_query": plan.search_query,
-                    "offer_ids": list(plan.offer_ids),
+                    "transaction_ids": list(plan.transaction_ids),
                     "top_k": plan.top_k,
                 },
                 "retrieved_documents": [document_log_payload(record) for record in retrieved_documents],
@@ -400,7 +400,7 @@ def main():
 
 if __name__ == "__main__":
     setup_logging()
-    logger = logging.getLogger("vector_db")
+    logger = logging.getLogger("bidbot.vector_db")
 
     llm = ChatOpenAI(model=MODEL)
     embeddings = OpenAIEmbeddings(model=MODEL_EMBEDDINGS)
@@ -444,7 +444,7 @@ if __name__ == "__main__":
             documents.append(Document(page_content=doc, metadata=meta))
 
     indexed_documents: list[IndexedDocument] = [build_indexed_document(document) for document in documents]
-    indexed_documents_by_id: dict[str, IndexedDocument] = {record.offer_id: record for record in indexed_documents}
+    indexed_documents_by_id: dict[str, IndexedDocument] = {record.transaction_id: record for record in indexed_documents}
     logger.info(f"built in-memory indexed_documents count={len(indexed_documents)}")
 
     main()
