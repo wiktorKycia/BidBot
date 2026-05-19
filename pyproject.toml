@@ -21,7 +21,7 @@ dependencies = [
     "lxml>=6.1.0",
     "requests==2.34.1",
     "tzdata>=2026.2",
-
+    "unstructured>=0.22.29",
 ]
 
 [dependency-groups]

@@ -14,7 +14,13 @@ from typing import Any
 
 from chromadb import PersistentClient
 from langchain_chroma import Chroma
-from langchain_community.document_loaders import JSONLoader, PyPDFLoader
+from langchain_community.document_loaders import (
+    JSONLoader,
+    PyPDFLoader,
+    UnstructuredWordDocumentLoader,
+    UnstructuredExcelLoader,
+    UnstructuredXMLLoader
+)
 from langchain_community.document_loaders.directory import DirectoryLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
@@ -33,8 +39,9 @@ MAX_CHROMA_BATCH = 5461
 setup_logging()
 logger = logging.getLogger("vector_db")
 
-def convert_pdf_to_documents(filepath: Path) -> list[Document]:
-    loader = PyPDFLoader(str(filepath))
+
+def convert_file(filepath: Path) -> list[Document]:
+    loader = create_loader(filepath)
     docs = loader.load()
 
     text_splitter = RecursiveCharacterTextSplitter(
@@ -42,6 +49,17 @@ def convert_pdf_to_documents(filepath: Path) -> list[Document]:
         chunk_overlap=100
     )
     return text_splitter.split_documents(docs)
+
+def create_loader(filepath: Path):
+    if filepath.suffix == ".pdf":
+        return PyPDFLoader(str(filepath))
+    elif filepath.suffix in [".docx",".doc",".docm"]:
+        return UnstructuredWordDocumentLoader(str(filepath))
+    elif filepath.suffix in [".xlsx", ".xls"]:
+        return UnstructuredExcelLoader(str(filepath))
+    elif filepath.suffix == ".xml":
+        return UnstructuredXMLLoader(str(filepath))
+    raise Exception("unsupported file suffix")
 
 
 async def extend_offer_data(document: Document) -> list[Document]:
@@ -57,8 +75,12 @@ async def extend_offer_data(document: Document) -> list[Document]:
         for attachment in attachments_list:
             if attachment["downloaded"]:
                 full_path = ATTACHMENTS_DIR / offer_id / attachment["filename"]
-                if full_path.suffix == ".pdf":
-                    attachment_documents.extend(convert_pdf_to_documents(full_path))
+                attachment_documents.extend(convert_file(full_path))
+
+    for doc in attachment_documents:
+        doc.metadata["offer_id"] = offer_id
+        doc.metadata["source_type"] = "attachment"
+        doc.metadata["title"] = offer["title"]
 
     return [document, *attachment_documents]
 
