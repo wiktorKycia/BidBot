@@ -25,7 +25,7 @@ OPENAI_API_KEY = require_openai_api_key()
 
 MODEL_EMBEDDINGS = "text-embedding-3-small"
 
-FRESH_DATA_RELOAD = False  # if set to True, the data will be first deleted, then loaded, for testing purposes
+FRESH_DATA_RELOAD = True  # if set to True, the data will be first deleted, then loaded, for testing purposes
 
 CHROMA_DB_PATH = Path("chroma_langchain_db")
 
@@ -70,7 +70,7 @@ def extract_offer_ids_from_text(*values: str) -> tuple[str, ...]:
 async def add_metadata(document: Document) -> Document:
     offer = await read_json(document.metadata["source"])
     document.metadata["offer_id"] = offer["id"]
-    document.metadata["source_type"] = SourceType.JSON
+    document.metadata["source_type"] = "json"   # the other one is attachment
     document.metadata["title"] = offer["title"]
     return document
 
@@ -422,9 +422,11 @@ if __name__ == "__main__":
             logger.info(f"clearing existing vector store ids count={len(existing_ids)}")
             vector_store.delete(existing_ids)
 
-        tasks = [add_metadata(document) for document in documents]
+        async def apply_metadata(docs):
+            tasks = [add_metadata(document) for document in documents]
+            return await asyncio.gather(*tasks, return_exceptions=True)
 
-        results = asyncio.gather(*tasks, return_exceptions=True)
+        results = asyncio.run(apply_metadata(documents))
 
         documents = []
 
