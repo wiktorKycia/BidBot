@@ -1,6 +1,7 @@
-import os
 import logging.config
+import os
 from pathlib import Path
+
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -70,6 +71,7 @@ DEFAULT_HEADERS = {
 
 def setup_logging():
     logging.config.dictConfig(LOGGING_CONFIG)
+
 
 def require_openai_api_key() -> str:
     api_key = os.getenv("OPENAI_API_KEY")
