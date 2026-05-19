@@ -7,8 +7,9 @@ from aiohttp import TCPConnector
 from aiohttp.resolver import AsyncResolver
 from bs4 import BeautifulSoup
 
-from etl.scrapers.settings import ATTACHMENTS_DIR, PARSED_DIR, RAW_DIR, setup_logging
+from etl.scrapers.settings import ATTACHMENTS_DIR, PARSED_DIR, RAW_DIR
 from etl.utils import save_json
+from etl.loggers import setup_logging
 
 setup_logging()
 logger = logging.getLogger(__name__)

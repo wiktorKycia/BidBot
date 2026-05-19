@@ -24,11 +24,11 @@ from etl.scrapers.settings import (
     MAX_ZIP_RATIO,
     PARSED_DIR,
     RAW_DIR,
-    setup_logging,
 )
 from etl.scrapers.settings import (
     DEFAULT_HEADERS as HEADERS,
 )
+from etl.loggers import setup_logging
 from etl.utils import save_json, save_to_file
 
 setup_logging()
