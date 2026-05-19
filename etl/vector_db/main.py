@@ -3,6 +3,7 @@ import logging
 import re
 from logging.handlers import RotatingFileHandler
 from operator import itemgetter
+from pathlib import Path
 from typing import Any
 
 from chromadb import PersistentClient
@@ -12,9 +13,10 @@ from langchain_community.document_loaders.directory import DirectoryLoader
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate, SystemMessagePromptTemplate
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from models import IndexedDocument, RetrievalPlan
 from prompts import main_system_message_template, use_search_system_message_template
-from etl.settings import require_openai_api_key, MODEL, PARSED_DIR, LOG_DIR
-from models import RetrievalPlan, IndexedDocument
+
+from etl.settings import LOG_DIR, MODEL, PARSED_DIR, require_openai_api_key
 
 OPENAI_API_KEY = require_openai_api_key()
 
@@ -419,9 +421,7 @@ if __name__ == "__main__":
     documents = []
 
     if FRESH_DATA_RELOAD or len(existing_ids) == 0:
-        loader = DirectoryLoader(
-            str(PARSED_DIR), glob="**/*.json", loader_cls=JSONLoader, loader_kwargs={"jq_schema": ".", "text_content": False}
-        )  # type: ignore[arg-type]
+        loader = DirectoryLoader(str(PARSED_DIR), glob="**/*.json", loader_cls=JSONLoader, loader_kwargs={"jq_schema": ".", "text_content": False})  # type: ignore[arg-type]
 
         documents = loader.load()
         logger.info(f"loaded documents from parsed_json_path={PARSED_DIR} count={len(documents)}")
