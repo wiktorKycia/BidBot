@@ -1,8 +1,8 @@
-import asyncio
 import logging
 import os
 import platform
 import subprocess
+import time
 from pathlib import Path
 from typing import Literal
 
@@ -152,17 +152,18 @@ client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 
 def is_rate_limit(e: Exception) -> bool:
-    """Sprawdza, czy wyjątek to 429 Too Many Requests (oznacza, że chcemy ponowić próbę)."""
     if isinstance(e, ClientError) and e.code == 429:
-        logger.warning("Limit API 429 osiągnięty, uruchamiam backoff...")
+        logger.warning("Limit API 429 osiągnięty, czekam przed wznowieniem prób...")
         return True
     return False
 
 
-@backoff.on_exception(backoff.expo, ClientError, max_tries=5, giveup=lambda e: not is_rate_limit(e), logger=logger)
-async def extract_tender_data_async(context_text: str) -> TenderData | None:
-    response = await client.aio.models.generate_content(
-        model="gemini-2.5-pro",
+@backoff.on_exception(backoff.fibo, ClientError, max_tries=6, giveup=lambda e: not is_rate_limit(e), logger=logger)
+def extract_tender_data(context_text: str) -> TenderData | None:
+    model_name = "gemini-2.5-flash"
+
+    response = client.models.generate_content(
+        model=model_name,
         contents=f"Wyciągnij dane z poniższych załączników przetargowych:\n\n{context_text}",
         config={
             "system_instruction": SYSTEM_PROMPT,
@@ -174,56 +175,43 @@ async def extract_tender_data_async(context_text: str) -> TenderData | None:
     return response.parsed
 
 
-async def process_single_tender(tender_dir: Path, semaphore: asyncio.Semaphore):
-    """Zarządza ekstrakcją i asynchronicznym wysyłaniem pojedynczego przetargu pod kontrolą semafora."""
-    logger.info(f"Przetwarzam przetarg: {tender_dir.name}")
-    combined_text = []
-
-    for file_path in tender_dir.glob("*"):
-        if file_path.is_file() and not file_path.name.startswith("."):
-            logger.debug(f"Parsowanie pliku: {file_path.name}")
-            text = parse_file(file_path)
-            if text.strip():
-                combined_text.append(f"=== ZAŁĄCZNIK: {file_path.name} ===\n{text}")
-
-    full_context = "\n\n".join(combined_text)
-
-    if not full_context:
-        logger.warning(f"Brak wyciągniętego tekstu w folderze {tender_dir.name}, pomijam.")
-        return
-
-    logger.info(f"Oczekuję w kolejce do LLM ({tender_dir.name})...")
-
-    async with semaphore:
-        logger.info(f"Wysyłam zapytanie LLM dla {tender_dir.name}...")
-        try:
-            tender_json_obj = await extract_tender_data_async(full_context)
-            if tender_json_obj:
-                logger.info(f"Pomyślnie wyciągnięto dane dla przetargu: {tender_dir.name}")
-                logger.info(f"WYNIK - JSON ({tender_dir.name}):\n{tender_json_obj.model_dump_json(indent=2)}")
-        except Exception as e:
-            logger.error(f"Ostateczny błąd LLM po powtórkach dla {tender_dir.name}: {e}", exc_info=True)
-
-        await asyncio.sleep(5)
-
-
-async def main_async(base_dir: Path = ATTACHMENTS_DIR):
+def main(base_dir: Path = ATTACHMENTS_DIR):
     base_path = Path(base_dir)
 
     if not base_path.exists():
         logger.error(f"Katalog {base_path} nie istnieje!")
         return
 
-    semaphore = asyncio.Semaphore(1)
-
-    tasks = []
     for tender_dir in base_path.iterdir():
         if tender_dir.is_dir():
-            tasks.append(process_single_tender(tender_dir, semaphore))
+            logger.info(f"Rozpoczynam przetwarzanie przetargu: {tender_dir.name}")
+            combined_text = []
 
-    if tasks:
-        await asyncio.gather(*tasks)
+            for file_path in tender_dir.glob("*"):
+                if file_path.is_file() and not file_path.name.startswith("."):
+                    logger.debug(f"Parsowanie pliku: {file_path.name}")
+                    text = parse_file(file_path)
+                    if text.strip():
+                        combined_text.append(f"=== ZAŁĄCZNIK: {file_path.name} ===\n{text}")
+
+            full_context = "\n\n".join(combined_text)
+
+            if not full_context:
+                logger.warning(f"Brak wyciągniętego tekstu w folderze {tender_dir.name}, pomijam.")
+                continue
+
+            logger.info(f"Wysyłam zapytanie LLM dla {tender_dir.name}...")
+            try:
+                tender_json_obj = extract_tender_data(full_context)
+                if tender_json_obj:
+                    logger.info(f"Pomyślnie wyciągnięto dane dla przetargu: {tender_dir.name}")
+                    logger.info(f"WYNIK - JSON ({tender_dir.name}):\n{tender_json_obj.model_dump_json(indent=2)}")
+            except Exception as e:
+                logger.error(f"Ostateczny błąd LLM po powtórkach dla {tender_dir.name}: {e}", exc_info=True)
+
+            logger.info("Cooldown 15 sekund")
+            time.sleep(15)
 
 
 if __name__ == "__main__":
-    asyncio.run(main_async())
+    main()
