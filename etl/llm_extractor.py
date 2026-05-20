@@ -209,8 +209,8 @@ def main(base_dir: Path = ATTACHMENTS_DIR):
             except Exception as e:
                 logger.error(f"Ostateczny błąd LLM po powtórkach dla {tender_dir.name}: {e}", exc_info=True)
 
-            logger.info("Cooldown 15 sekund")
-            time.sleep(15)
+            logger.info("Cooldown 3 sekundy")
+            time.sleep(3)
 
 
 if __name__ == "__main__":
