@@ -22,7 +22,15 @@ logger = logging.getLogger("vector_db")
 def convert_file(filepath: Path) -> list[Document]:
     logger.info(f"converting attachment: {filepath}")
     loader = create_loader(filepath)
-    docs = loader.load()
+    if not loader:
+        logger.warning(f"Unsupported file suffix for: {filepath}")
+        return []
+        
+    try:
+        docs = loader.load()
+    except Exception as e:
+        logger.error(f"Error loading {filepath}: {e}")
+        return []
 
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
     return text_splitter.split_documents(docs)
@@ -37,8 +45,8 @@ def create_loader(filepath: Path):
         return UnstructuredExcelLoader(str(filepath))
     elif filepath.suffix == ".xml":
         return UnstructuredXMLLoader(str(filepath))
-    logger.exception("unsupported file suffix")
-    raise Exception("unsupported file suffix")
+    logger.exception(f"unsupported file suffix for file: {filepath}")
+    return None
 
 
 async def extend_document(document: Document) -> list[Document]:
@@ -100,7 +108,7 @@ def extend_and_save_documents(vector_store: Chroma, documents: list[Document]):
         if isinstance(res, Exception):
             logger.exception(f"Error while extending document: {res!r}")
         else:
-            extended_documents.append(res)
+            extended_documents.extend(res)
 
     add_documents_to_vector_store(extended_documents, vector_store)
     logger.info(f"added documents to vector store count={len(extended_documents)}")
