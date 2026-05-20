@@ -20,6 +20,7 @@ logger = logging.getLogger("vector_db")
 
 
 def convert_file(filepath: Path) -> list[Document]:
+    logger.info(f"converting attachment: {filepath}")
     loader = create_loader(filepath)
     docs = loader.load()
 
@@ -36,6 +37,7 @@ def create_loader(filepath: Path):
         return UnstructuredExcelLoader(str(filepath))
     elif filepath.suffix == ".xml":
         return UnstructuredXMLLoader(str(filepath))
+    logger.exception("unsupported file suffix")
     raise Exception("unsupported file suffix")
 
 
@@ -45,8 +47,10 @@ async def extend_document(document: Document) -> list[Document]:
     document.metadata["offer_id"] = offer_id
     document.metadata["source_type"] = "json"
     document.metadata["title"] = offer["title"]
-    print("json Metadata: " + document.metadata)
-    print("json Content: " + document.page_content)
+    print(f"json Metadata:  {document.metadata}")
+    # print(f"json Content:  {document.page_content}")
+    print(f"attachments count: {len(offer['scraper_attachments'])}")
+
 
     attachments_list = offer["scraper_attachments"]
     attachment_documents: list[Document] = []
@@ -55,13 +59,14 @@ async def extend_document(document: Document) -> list[Document]:
             if attachment["downloaded"]:
                 full_path = ATTACHMENTS_DIR / offer_id / attachment["filename"]
                 attachment_documents.extend(convert_file(full_path))
+    print(f"attachment documents count: {len(attachment_documents)}")
 
     for doc in attachment_documents:
         doc.metadata["offer_id"] = offer_id
         doc.metadata["source_type"] = "attachment"
         doc.metadata["title"] = offer["title"]
-        print("Metadata: " + doc.metadata)
-        print("Content " + doc.page_content)
+        print(f"Metadata: {doc.metadata}")
+        print(f"Content {doc.page_content}")
 
     return [document, *attachment_documents]
 

@@ -16,7 +16,7 @@ LOGGING_CONFIG = {
         "console": {
             "class": "logging.StreamHandler",
             "formatter": "standard",
-            "level": "INFO",
+            "level": "DEBUG",
             "stream": "ext://sys.stdout",
         },
         "file": {
@@ -45,7 +45,7 @@ LOGGING_CONFIG = {
         "aiohttp": {"level": "WARNING"},
         "httpx": {"level": "WARNING"},
         "vector_db": {
-            "handlers": ["rotatingFile"],
+            "handlers": ["rotatingFile", "console"],
             "level": "DEBUG",
             "propagate": False,
         },

@@ -409,10 +409,13 @@ if __name__ == "__main__":
     vector_store = Chroma(collection_name="bid_info_json", embedding_function=embeddings, persist_directory=CHROMA_DB_PATH)
 
     documents = load_data(vector_store, LoadDataStrategy.ReloadAll) # ReloadAll for testing purposes, normally I would leave it to default
+    print("finished loading documents, count=", len(documents))
 
+    try:
+        indexed_documents: list[IndexedDocument] = [build_indexed_document(document) for document in documents]
+        indexed_documents_by_id: dict[str, IndexedDocument] = {record.offer_id: record for record in indexed_documents}
+        logger.info(f"built in-memory indexed_documents count={len(indexed_documents)}")
+    except Exception:
+        print("indexing errors")
 
-    indexed_documents: list[IndexedDocument] = [build_indexed_document(document) for document in documents]
-    indexed_documents_by_id: dict[str, IndexedDocument] = {record.offer_id: record for record in indexed_documents}
-    logger.info(f"built in-memory indexed_documents count={len(indexed_documents)}")
-
-    main()
+    # main()
