@@ -1,5 +1,12 @@
 from dataclasses import dataclass
 from typing import Any
+from enum import Enum
+
+class LoadDataStrategy(Enum):
+    AddNew = 1
+    ReloadAll = 2
+    OldDataOnly = 3
+
 
 @dataclass(frozen=True)
 class DocumentMetadata:

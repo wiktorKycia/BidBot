@@ -8,6 +8,7 @@ import asyncio
 import json
 import logging
 import re
+from argparse import ArgumentError
 from operator import itemgetter
 from pathlib import Path
 from typing import Any
@@ -30,7 +31,7 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from etl.llms import MODEL, require_openai_api_key
 from etl.loggers import setup_logging
 from etl.scrapers.settings import PARSED_DIR, ATTACHMENTS_DIR
-from etl.vector_db.models import IndexedDocument, RetrievalPlan
+from etl.vector_db.models import IndexedDocument, RetrievalPlan, LoadDataStrategy
 from etl.vector_db.prompts import main_system_message_template, use_search_system_message_template
 from etl.utils import read_json
 
@@ -62,11 +63,11 @@ def create_loader(filepath: Path):
     raise Exception("unsupported file suffix")
 
 
-async def extend_offer_data(document: Document) -> list[Document]:
+async def extend_document(document: Document) -> list[Document]:
     offer = await read_json(document.metadata["source"])
     offer_id = offer["id"]
     document.metadata["offer_id"] = offer_id
-    document.metadata["source_type"] = "json"  # the other one is attachment
+    document.metadata["source_type"] = "json"
     document.metadata["title"] = offer["title"]
 
     attachments_list = offer["scraper_attachments"]
@@ -85,54 +86,77 @@ async def extend_offer_data(document: Document) -> list[Document]:
     return [document, *attachment_documents]
 
 
-async def add_metadata(document: Document) -> Document:
-    offer = await read_json(document.metadata["source"])
-    document.metadata["offer_id"] = offer["id"]
-    document.metadata["source_type"] = "json"   # the other one is attachment
-    document.metadata["title"] = offer["title"]
-    return document
-
-
 def add_documents_to_vector_store(documents: list[Document], vector_store: Chroma):
     for i in range(0, len(documents), MAX_CHROMA_BATCH):
         batch = documents[i : i + MAX_CHROMA_BATCH]
         vector_store.add_documents(batch)
 
+def load_json_docs_from_directory(dirpath: Path) -> list[Document]:
+    loader = DirectoryLoader(str(dirpath), glob="**/*.json", loader_cls=JSONLoader,  # type: ignore[arg-type]
+                             loader_kwargs={"jq_schema": ".", "text_content": False})
+    return loader.load()
 
-def load_data(vector_store: Chroma, fresh_data_reload: bool = False):
+
+def extend_and_save_documents(vector_store: Chroma, documents: list[Document]):
+    async def extend_documents(docs):
+        tasks = [extend_document(document) for document in docs]
+        return await asyncio.gather(*tasks, return_exceptions=True)
+
+    results = asyncio.run(extend_documents(documents))
+
+    extended_documents = []
+
+    for res in results:
+        if isinstance(res, Exception):
+            logger.exception(f"Error while adding metadata to document: {res!r}")
+        else:
+            extended_documents.append(res)
+
+    add_documents_to_vector_store(extended_documents, vector_store)
+    logger.info(f"added documents to vector store count={len(extended_documents)}")
+
+
+def load_data(vector_store: Chroma, load_data_strategy: LoadDataStrategy = 1) -> list[Document]:
     existing_data = vector_store.get()
     existing_ids = existing_data["ids"]
     documents = []
 
-    if fresh_data_reload or len(existing_ids) == 0:
-        loader = DirectoryLoader(str(PARSED_DIR), glob="**/*.json", loader_cls=JSONLoader, # type: ignore[arg-type]
-                                 loader_kwargs={"jq_schema": ".", "text_content": False})
+    if len(existing_ids) == 0:
+        load_data_strategy = LoadDataStrategy.ReloadAll
 
-        documents = loader.load()
-        logger.info(f"loaded documents from parsed_json_path={PARSED_DIR} count={len(documents)}")
+    match load_data_strategy:
+        case LoadDataStrategy.ReloadAll:
+            # clear collection before adding documents
+            if len(existing_ids) > 0:
+                logger.info(f"clearing existing vector store ids count={len(existing_ids)}")
+                vector_store.delete(existing_ids)
 
-        # clear collection before adding documents
-        if len(existing_ids) > 0:
-            logger.info(f"clearing existing vector store ids count={len(existing_ids)}")
-            vector_store.delete(existing_ids)
 
-        async def apply_metadata(docs):
-            tasks = [extend_offer_data(document) for document in docs]
-            return await asyncio.gather(*tasks, return_exceptions=True)
+            documents = load_json_docs_from_directory(PARSED_DIR)
+            logger.info(f"loaded documents from parsed_json_path={PARSED_DIR} count={len(documents)}")
 
-        results = asyncio.run(apply_metadata(documents))
+            extend_and_save_documents(vector_store, documents)
 
-        documents = []
 
-        for res in results:
-            if isinstance(res, Exception):
-                logger.exception(f"Error while adding metadata to document: {res!r}")
-            else:
-                documents.append(res)
+        case LoadDataStrategy.AddNew:
+            documents = load_json_docs_from_directory(PARSED_DIR)
+            logger.info(f"loaded documents from parsed_json_path={PARSED_DIR} count={len(documents)}")
 
-        add_documents_to_vector_store(documents, vector_store)
-        logger.info(f"added documents to vector store count={len(documents)}")
-    else:
-        logger.info(f"loading documents from vector store count={len(existing_ids)}")
-        for doc, meta in zip(existing_data["documents"], existing_data["metadatas"], strict=True):
-            documents.append(Document(page_content=doc, metadata=meta))
+            existing_sources = {meta.get("source") for meta in existing_data["metadatas"] if meta}
+            documents = [doc for doc in documents if doc.metadata["source"] not in existing_sources]
+            logger.info(f"new documents prepared to load, count={len(documents)}")
+
+            extend_and_save_documents(vector_store, documents)
+
+
+        case LoadDataStrategy.OldDataOnly:
+            logger.info(f"loading documents from vector store count={len(existing_ids)}")
+            for doc, meta in zip(existing_data["documents"], existing_data["metadatas"], strict=True):
+                documents.append(Document(page_content=doc, metadata=meta))
+
+
+        case _:
+            raise ValueError(f"Unexpected loading data strategy: {load_data_strategy}")
+
+
+    return documents

@@ -17,9 +17,10 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from etl.llms import MODEL, require_openai_api_key
 from etl.loggers import setup_logging
 from etl.scrapers.settings import PARSED_DIR
-from etl.vector_db.models import IndexedDocument, RetrievalPlan
+from etl.vector_db.models import IndexedDocument, RetrievalPlan, LoadDataStrategy
 from etl.vector_db.prompts import main_system_message_template, use_search_system_message_template
 from etl.utils import read_json
+from etl.vector_db.vector_saver import load_data
 
 OPENAI_API_KEY = require_openai_api_key()
 
@@ -407,41 +408,8 @@ if __name__ == "__main__":
 
     vector_store = Chroma(collection_name="bid_info_json", embedding_function=embeddings, persist_directory=CHROMA_DB_PATH)
 
-    existing_data = vector_store.get()
-    existing_ids = existing_data["ids"]
-    documents = []
+    documents = load_data(vector_store, LoadDataStrategy.ReloadAll) # ReloadAll for testing purposes, normally I would leave it to default
 
-    if FRESH_DATA_RELOAD or len(existing_ids) == 0:
-        loader = DirectoryLoader(str(PARSED_DIR), glob="**/*.json", loader_cls=JSONLoader, loader_kwargs={"jq_schema": ".", "text_content": False})  # type: ignore[arg-type]
-
-        documents = loader.load()
-        logger.info(f"loaded documents from parsed_json_path={PARSED_DIR} count={len(documents)}")
-
-        # clear collection before adding documents
-        if len(existing_ids) > 0:
-            logger.info(f"clearing existing vector store ids count={len(existing_ids)}")
-            vector_store.delete(existing_ids)
-
-        async def apply_metadata(docs):
-            tasks = [add_metadata(document) for document in docs]
-            return await asyncio.gather(*tasks, return_exceptions=True)
-
-        results = asyncio.run(apply_metadata(documents))
-
-        documents = []
-
-        for res in results:
-            if isinstance(res, Exception):
-                logger.exception(f"Error while adding metadata to document: {res!r}")
-            else:
-                documents.append(res)
-
-        add_documents_to_vector_store(documents, vector_store)
-        logger.info(f"added documents to vector store count={len(documents)}")
-    else:
-        logger.info(f"loading documents from vector store count={len(existing_ids)}")
-        for doc, meta in zip(existing_data["documents"], existing_data["metadatas"], strict=True):
-            documents.append(Document(page_content=doc, metadata=meta))
 
     indexed_documents: list[IndexedDocument] = [build_indexed_document(document) for document in documents]
     indexed_documents_by_id: dict[str, IndexedDocument] = {record.offer_id: record for record in indexed_documents}
