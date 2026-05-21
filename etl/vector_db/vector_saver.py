@@ -29,11 +29,14 @@ def convert_file(filepath: Path) -> list[Document]:
     try:
         docs = loader.load()
     except Exception as e:
-        logger.error(f"Error loading {filepath}: {e}")
+        logger.exception(f"Error loading {filepath}: {e!r}")
         return []
 
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
-    return text_splitter.split_documents(docs)
+    docs = text_splitter.split_documents(docs)
+    for i, doc in enumerate(docs):
+        doc.metadata["seq_num"] = i+1
+    return docs
 
 
 def create_loader(filepath: Path):
@@ -45,7 +48,6 @@ def create_loader(filepath: Path):
         return UnstructuredExcelLoader(str(filepath))
     elif filepath.suffix == ".xml":
         return UnstructuredXMLLoader(str(filepath))
-    logger.exception(f"unsupported file suffix for file: {filepath}")
     return None
 
 
@@ -55,10 +57,6 @@ async def extend_document(document: Document) -> list[Document]:
     document.metadata["offer_id"] = offer_id
     document.metadata["source_type"] = "json"
     document.metadata["title"] = offer["title"]
-    print(f"json Metadata:  {document.metadata}")
-    # print(f"json Content:  {document.page_content}")
-    print(f"attachments count: {len(offer['scraper_attachments'])}")
-
 
     attachments_list = offer["scraper_attachments"]
     attachment_documents: list[Document] = []
@@ -67,14 +65,11 @@ async def extend_document(document: Document) -> list[Document]:
             if attachment["downloaded"]:
                 full_path = ATTACHMENTS_DIR / offer_id / attachment["filename"]
                 attachment_documents.extend(convert_file(full_path))
-    print(f"attachment documents count: {len(attachment_documents)}")
 
-    for doc in attachment_documents:
+    for i, doc in enumerate(attachment_documents):
         doc.metadata["offer_id"] = offer_id
         doc.metadata["source_type"] = "attachment"
         doc.metadata["title"] = offer["title"]
-        print(f"Metadata: {doc.metadata}")
-        print(f"Content {doc.page_content}")
 
     return [document, *attachment_documents]
 

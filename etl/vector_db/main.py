@@ -1,4 +1,3 @@
-import asyncio
 import json
 import logging
 import re
@@ -8,15 +7,12 @@ from typing import Any
 
 from chromadb import PersistentClient
 from langchain_chroma import Chroma
-from langchain_community.document_loaders import JSONLoader
-from langchain_community.document_loaders.directory import DirectoryLoader
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate, SystemMessagePromptTemplate
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 from etl.llms import MODEL, require_openai_api_key
 from etl.loggers import setup_logging
-from etl.scrapers.settings import PARSED_DIR
 from etl.vector_db.models import IndexedDocument, RetrievalPlan, LoadDataStrategy
 from etl.vector_db.prompts import main_system_message_template, use_search_system_message_template
 from etl.utils import read_json
@@ -408,7 +404,7 @@ if __name__ == "__main__":
 
     vector_store = Chroma(collection_name="bid_info_json", embedding_function=embeddings, persist_directory=CHROMA_DB_PATH)
 
-    documents = load_data(vector_store, LoadDataStrategy.ReloadAll) # ReloadAll for testing purposes, normally I would leave it to default
+    documents = load_data(vector_store, LoadDataStrategy.OldDataOnly) # ReloadAll for testing purposes, normally I would leave it to default
     print("finished loading documents, count=", len(documents))
 
     try:
