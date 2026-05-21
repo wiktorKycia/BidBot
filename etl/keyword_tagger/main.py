@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
@@ -15,8 +16,10 @@ OPENAI_API_KEY = require_openai_api_key()
 setup_logging()
 logger = logging.getLogger(__name__)
 
+
 class TagsOutput(BaseModel):
     tags: list[str] = Field(description="List of 3 to 5 high-quality keywords")
+
 
 llm = ChatOpenAI(model=MODEL, api_key=OPENAI_API_KEY).with_structured_output(TagsOutput)
 system_message = SystemMessage("""
