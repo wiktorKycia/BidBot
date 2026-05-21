@@ -43,7 +43,7 @@ async def tag_file(filename: str) -> int:
         if len(data["enrichment"]["tags"]) > 0:  # nie trzeba tagować, bo tagi już są
             return 0
     except KeyError as e:
-        logger.info(f"Niepełna struktura pliku: {filename}, wyjątek {e} obługiwany")
+        logger.info(f"Niepełna struktura w pliku: {filename}, wyjątek {e!r} obługiwany")
         data["enrichment"]: dict = {"tags": []}
 
     response = await llm.ainvoke([system_message, HumanMessage(content=json.dumps(data))])
