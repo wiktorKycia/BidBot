@@ -47,7 +47,8 @@ def to_json_log(payload: Any) -> str:
 
 def document_log_payload(record: Any) -> dict[str, Any]:
     return {
-        "source": record.source,
+        "filepath": record.filepath,
+        "source_url": record.source_url,
         "title": record.title,
         "offer_id": record.offer_id,
         # "raw_text": record.raw_text,
@@ -68,18 +69,9 @@ def extract_offer_ids_from_text(*values: str) -> tuple[str, ...]:
     return tuple(unique_strings(ids))
 
 
-async def add_metadata(document: Document) -> Document:
-    offer = await read_json(document.metadata["source"])
-    document.metadata["offer_id"] = offer["id"]
-    document.metadata["source_type"] = "json"   # the other one is attachment
-    document.metadata["title"] = offer["title"]
-    return document
-
-
 def build_indexed_document(document: Document) -> IndexedDocument:
     """converts a LangChain document into the internal"""
-
-    # try to parse the page content as JSON
+    
     raw_text = document.page_content.strip()
     try:
         payload = json.loads(raw_text)
@@ -88,14 +80,17 @@ def build_indexed_document(document: Document) -> IndexedDocument:
 
     # extract a source path from metadata
     source = payload.get("scraper_url")
+    filepath = document.metadata.get("source")
+    title = document.metadata.get("title", "")
+    offer_id = document.metadata.get("offer_id")
 
-    return IndexedDocument(document=document, source=source, title=payload["title"], offer_id=payload["id"], raw_text=raw_text)
+    return IndexedDocument(document=document, source_url=source, filepath=filepath, title=title, offer_id=offer_id, raw_text=raw_text)
 
 
 def format_indexed_document(record: IndexedDocument) -> str:
     """converts one IndexedDocument into readable text for the prompt"""
     lines = [
-        f"Source: {record.source}",
+        f"Source: {record.source_url}",
         f"Title: {record.title}",
     ]
     if record.offer_id:
@@ -202,9 +197,10 @@ def exact_offer_lookup(offer_ids: tuple[str, ...]) -> list[IndexedDocument]:
     for offer_id in offer_ids:
         logger.debug(f"exact_offer_lookup searching for offer_id={offer_id}")
         if offer_id in indexed_documents_by_id:
-            record = indexed_documents_by_id[offer_id]
-            matched_documents.append(record)
-            logger.debug(f"exact_offer_lookup match={to_json_log(document_log_payload(record))}")
+            records = indexed_documents_by_id[offer_id]
+            matched_documents.extend(records)
+            for record in records:
+                logger.debug(f"exact_offer_lookup match={to_json_log(document_log_payload(record))}")
         else:
             logger.warning(f"Did not found the exact match for offer ID: {offer_id}")
 
@@ -214,7 +210,7 @@ def exact_offer_lookup(offer_ids: tuple[str, ...]) -> list[IndexedDocument]:
             {
                 "offer_ids": list(offer_ids),
                 "matched_count": len(matched_documents),
-                "matched_sources": [record.source for record in matched_documents],
+                "matched_sources": [record.source_url for record in matched_documents],
             }
         ),
     )
@@ -285,23 +281,33 @@ def hybrid_retrieve(question: str, conversation_history: list[dict[str, str]]) -
     semantic_matches = semantic_lookup(plan.search_query, plan.top_k)
 
     combined: list[IndexedDocument] = []
-    seen_sources: set[str] = set()
-    remaining = max(plan.top_k - len(exact_matches), 0)
-    for i, record in enumerate([*exact_matches, *semantic_matches]):
-        if record.source in seen_sources:
-            continue
-        seen_sources.add(record.source)
-        combined.append(record)
-
-        if i >= remaining:
+    seen_texts: set[str] = set()
+    
+    # We want ALL exact matches, and then semantic matches up to top_k additional or total?
+    # Actually let's just include all exact matches, and add semantic matches until we have enough.
+    
+    for record in exact_matches:
+        if record.raw_text not in seen_texts:
+            seen_texts.add(record.raw_text)
+            combined.append(record)
+            
+    # How many semantic matches to add?
+    # We can add top_k semantic matches.
+    added_semantic = 0
+    for record in semantic_matches:
+        if added_semantic >= plan.top_k:
             break
+        if record.raw_text not in seen_texts:
+            seen_texts.add(record.raw_text)
+            combined.append(record)
+            added_semantic += 1
 
     logger.debug(
         "hybrid_retrieve_final=%s",
         to_json_log(
             {
                 "question": question,
-                "combined_sources": [record.source for record in combined],
+                "combined_sources": [record.source_url for record in combined],
                 "combined_documents": [document_log_payload(record) for record in combined],
             }
         ),
@@ -406,16 +412,23 @@ if __name__ == "__main__":
     llm = ChatOpenAI(model=MODEL)
     embeddings = OpenAIEmbeddings(model=MODEL_EMBEDDINGS)
 
-    vector_store = Chroma(collection_name="bid_info_json", embedding_function=embeddings, persist_directory=CHROMA_DB_PATH)
+    vector_store = Chroma(collection_name="bid_info_json", embedding_function=embeddings, persist_directory=str(CHROMA_DB_PATH))
 
-    documents = load_data(vector_store, LoadDataStrategy.ReloadAll) # ReloadAll for testing purposes, normally I would leave it to default
+    documents = load_data(vector_store, LoadDataStrategy.AddNew)
     print("finished loading documents, count=", len(documents))
 
-    try:
-        indexed_documents: list[IndexedDocument] = [build_indexed_document(document) for document in documents]
-        indexed_documents_by_id: dict[str, IndexedDocument] = {record.offer_id: record for record in indexed_documents}
-        logger.info(f"built in-memory indexed_documents count={len(indexed_documents)}")
-    except Exception:
-        print("indexing errors")
+    indexed_documents: list[IndexedDocument] = [build_indexed_document(document) for document in documents]
+    
+    from collections import defaultdict
+    indexed_documents_by_id: dict[str, list[IndexedDocument]] = defaultdict(list)
+    for record in indexed_documents:
+        if record.offer_id:
+            indexed_documents_by_id[record.offer_id].append(record)
+            
+    indexed_documents_by_filepath: dict[str, list[IndexedDocument]] = defaultdict(list)
+    for record in indexed_documents:
+        if record.filepath:
+            indexed_documents_by_filepath[record.filepath].append(record)
+    logger.info(f"built in-memory indexed_documents count={len(indexed_documents)}")
 
-    # main()
+    main()

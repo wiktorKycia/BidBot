@@ -28,20 +28,8 @@ class RetrievalPlan:
 @dataclass(frozen=True)
 class IndexedDocument:
     document: Any
-    source: str  # file absolute filepath to .json document
+    filepath: str  # file absolute filepath to .json document
+    source_url: str
     title: str
     offer_id: str
     raw_text: str
-
-@dataclass(frozen=True)
-class OfferRecord:
-    pass
-
-
-@dataclass(frozen=True)
-class AttachmentRecord:
-    pass
-
-@dataclass(frozen=True)
-class ChunkRecord:
-    pass

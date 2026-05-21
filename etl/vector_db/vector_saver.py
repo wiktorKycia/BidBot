@@ -95,7 +95,7 @@ def load_json_docs_from_directory(dirpath: Path) -> list[Document]:
     return loader.load()
 
 
-def extend_and_save_documents(vector_store: Chroma, documents: list[Document]):
+def extend_and_save_documents(vector_store: Chroma, documents: list[Document]) -> list[Document]:
     async def extend_documents(docs):
         tasks = [extend_document(document) for document in docs]
         return await asyncio.gather(*tasks, return_exceptions=True)
@@ -112,6 +112,7 @@ def extend_and_save_documents(vector_store: Chroma, documents: list[Document]):
 
     add_documents_to_vector_store(extended_documents, vector_store)
     logger.info(f"added documents to vector store count={len(extended_documents)}")
+    return extended_documents
 
 
 def load_data(vector_store: Chroma, load_data_strategy: LoadDataStrategy = 1) -> list[Document]:
@@ -132,7 +133,7 @@ def load_data(vector_store: Chroma, load_data_strategy: LoadDataStrategy = 1) ->
             documents = load_json_docs_from_directory(PARSED_DIR)
             logger.info(f"loaded documents from parsed_json_path={PARSED_DIR} count={len(documents)}")
 
-            extend_and_save_documents(vector_store, documents)
+            documents = extend_and_save_documents(vector_store, documents)
 
         case LoadDataStrategy.AddNew:
             documents = load_json_docs_from_directory(PARSED_DIR)
@@ -142,7 +143,12 @@ def load_data(vector_store: Chroma, load_data_strategy: LoadDataStrategy = 1) ->
             documents = [doc for doc in documents if doc.metadata["source"] not in existing_sources]
             logger.info(f"new documents prepared to load, count={len(documents)}")
 
-            extend_and_save_documents(vector_store, documents)
+            new_docs = extend_and_save_documents(vector_store, documents)
+            
+            # Append existing old documents so the total list returned contains both
+            for doc, meta in zip(existing_data["documents"], existing_data["metadatas"], strict=True):
+                new_docs.append(Document(page_content=doc, metadata=meta))
+            documents = new_docs
 
         case LoadDataStrategy.OldDataOnly:
             logger.info(f"loading documents from vector store count={len(existing_ids)}")
