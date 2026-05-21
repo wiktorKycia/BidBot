@@ -3,56 +3,56 @@ import streamlit as st
 
 API_URL = "http://localhost:8000/search"
 
-st.set_page_config(page_title="BidBot - Przeglądarka Przetargów", layout="wide")
+st.set_page_config(page_title="BidBot", layout="wide")
+st.title("BidBot")
 
-st.title("🏛️ BidBot - Znalezione Przetargi")
-st.markdown("Przeglądaj, filtruj i analizuj przetargi za pośrednictwem API.")
-
-with st.sidebar:
-    st.header("🔍 Filtrowanie")
-    search_query = st.text_input("Szukaj w treści...", placeholder="np. system informatyczny")
-
-    category = st.selectbox("Kategoria branżowa", ["Dowolna", "Healthcare", "AI", "Software", "Hardware"])
-
-    min_score = st.slider("Minimalny Relevance Score", 0.0, 1.0, 0.2, 0.05)
-
-    source_filter = st.selectbox("Platforma publikacji", ["Wszystkie", "Biuletyn Zamówień Publicznych", "TED", "Platforma zakupowa", "Nieznane"])
-
-    search_button = st.button("Szukaj przetargów", use_container_width=True)
+search_query = st.text_input("Szukaj w bazie:")
+search_button = st.button("Szukaj")
 
 if search_button or search_query:
-    if not search_query and category == "Dowolna":
-        st.warning("Wpisz frazę wyszukiwania lub wybierz kategorię, aby rozpocząć.")
+    with st.spinner("Odpytuję bazę..."):
+        try:
+            res = requests.post(API_URL, json={"query": search_query})
+            res.raise_for_status()
+            results = res.json()
+        except Exception as e:
+            st.error(f"Krytyczny błąd: {e}")
+            results = []
+
+    if not results:
+        st.error("Baza zwróciła 0 wyników.")
     else:
-        with st.spinner("Odpytuję API w poszukiwaniu przetargów..."):
-            payload = {"query": search_query, "category": category, "min_score": min_score, "source_platform": source_filter}
+        st.success(f"Znaleziono przetargów: {len(results)}")
 
-            try:
-                response = requests.post(API_URL, json=payload)
-                response.raise_for_status()
-                results = response.json()
-            except requests.exceptions.RequestException as e:
-                st.error(f"Błąd połączenia z API: {e}")
-                results = []
+        for index, item in enumerate(results):
+            title = item.get("title", "Brak tytułu")
+            offer_id = item.get("offer_id", "Brak ID")
+            score = item.get("score", 0.0)
+            buyer = item.get("buyer", "Brak danych")
+            deadline = item.get("deadline", "Brak danych")
+            source_url = item.get("source_url", "Brak linku")
+            description = item.get("description", "Brak opisu")
+            full_data = item.get("full_data", "")
+            raw_text = item.get("raw_text_preview", "")
 
-        if not results:
-            st.info("Nie znaleziono przetargów spełniających kryteria.")
-        else:
-            st.success(f"Znaleziono {len(results)} przetargów.")
+            with st.expander(f"📑 {title} | ID: {offer_id} | Score: {score:.4f}"):
+                tab1, tab2 = st.tabs(["Podstawowe Info", "JSON"])
 
-            for item in results:
-                with st.expander(f"Wynik: {item['title']} (Score: {item['score']:.2f})"):
-                    col1, col2 = st.columns([2, 1])
+                with tab1:
+                    st.markdown(f'<span style="font-size:small;">**Zamawiający:** {buyer}</span>', unsafe_allow_html=True)
+                    st.markdown(f'<span style="font-size:small;">**Termin:** {deadline}</span>', unsafe_allow_html=True)
+                    st.markdown(f'<span style="font-size:small;">**Link źródłowy:** [{source_url}]({source_url})</span>', unsafe_allow_html=True)
+                    st.markdown('<span style="font-size:small;">---</span>', unsafe_allow_html=True)
+                    st.markdown('<span style="font-size:small;">**Opis / Zakres:**</span>', unsafe_allow_html=True)
+                    st.markdown(f'<p style="font-size:small; white-space:pre-wrap;">{description}</p>', unsafe_allow_html=True)
 
-                    with col1:
-                        st.markdown("**Podsumowanie i treść:**")
-                        content = item["content_preview"]
-                        st.text(content + ("..." if len(content) >= 1000 else ""))
+                with tab2:
+                    if full_data:
+                        st.markdown(f"**Źródło:** `data/parsed/...{offer_id}.json`")
+                        st.code(full_data, language="json")
+                    else:
+                        st.warning("Nie znalazłem pliku JSON o takim ID w data/parsed.")
 
-                    with col2:
-                        st.markdown("**Szczegóły z API:**")
-                        st.write(f"- **ID Przetargu:** {item['offer_id']}")
-                        st.write(f"- **Platforma źródłowa:** {item['original_platform']}")
-                        st.write(f"- **Typ dokumentu:** {item['source_type']}")
-                        st.write(f"- **Relevance Score:** {item['score']:.2f}")
-                        st.write(f"Zapisano z pliku: `{item['raw_source_path']}`")
+                    if raw_text:
+                        st.markdown("**Fragmenty tekstu (ChromaDB):**")
+                        st.text_area(label="Fragmenty tekstu", value=raw_text, height=300, key=f"text_{index}", label_visibility="collapsed")
