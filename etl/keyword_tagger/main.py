@@ -5,6 +5,7 @@ import os
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
+from pydantic import BaseModel, Field
 
 from etl.llms import MODEL, require_openai_api_key
 from etl.loggers import setup_logging
@@ -16,7 +17,10 @@ OPENAI_API_KEY = require_openai_api_key()
 setup_logging()
 logger = logging.getLogger(__name__)
 
-llm = ChatOpenAI(model=MODEL, api_key=OPENAI_API_KEY)
+class TagsOutput(BaseModel):
+    tags: list[str] = Field(description="List of 3 to 5 high-quality keywords")
+
+llm = ChatOpenAI(model=MODEL, api_key=OPENAI_API_KEY).with_structured_output(TagsOutput)
 system_message = SystemMessage("""
 You are an expert in public procurement and document indexing.
 Your task is to analyze a JSON document representing a public procurement offer and generate a list of 3 to 5 high-quality keywords.
@@ -40,8 +44,8 @@ async def tag_file(filename: str) -> int:
     if len(data["enrichment"]["tags"]) > 0:  # nie trzeba tagować, bo tagi już są
         return 0
 
-    response = llm.invoke([system_message, HumanMessage(content=json.dumps(data))])
-    tags = list(json.loads(response.content))
+    response = await llm.ainvoke([system_message, HumanMessage(content=json.dumps(data))])
+    tags = response.tags
     logger.debug(f"Otagowano {filename} tagami: {tags}")
 
     if "enrichment" not in data:
