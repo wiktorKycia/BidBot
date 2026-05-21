@@ -72,14 +72,16 @@ def build_indexed_document(document: Document) -> IndexedDocument:
     raw_text = document.page_content.strip()
     try:
         payload = json.loads(raw_text)
+        if not isinstance(payload, dict):
+            payload = {}
     except json.JSONDecodeError:
         payload = {}
 
     # extract a source path from metadata
-    source = payload.get("scraper_url")
-    filepath = document.metadata.get("source")
-    title = document.metadata.get("title", "")
-    offer_id = document.metadata.get("offer_id")
+    source = payload.get("scraper_url", "no url provided")
+    filepath = document.metadata.get("source", "document not downloaded")
+    title = document.metadata.get("title", "unknown")
+    offer_id = document.metadata.get("offer_id", "unknown")
 
     return IndexedDocument(document=document, source_url=source, filepath=filepath, title=title, offer_id=offer_id, raw_text=raw_text)
 
