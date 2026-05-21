@@ -8,15 +8,12 @@ from typing import Any
 
 from chromadb import PersistentClient
 from langchain_chroma import Chroma
-from langchain_community.document_loaders import JSONLoader
-from langchain_community.document_loaders.directory import DirectoryLoader
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate, SystemMessagePromptTemplate
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 from etl.llms import MODEL, require_openai_api_key
 from etl.loggers import setup_logging
-from etl.scrapers.settings import PARSED_DIR
 from etl.vector_db.models import IndexedDocument, RetrievalPlan, LoadDataStrategy
 from etl.vector_db.prompts import main_system_message_template, use_search_system_message_template
 from etl.utils import read_json
@@ -311,23 +308,6 @@ def hybrid_retrieve(question: str, conversation_history: list[dict[str, str]]) -
     return plan, combined
 
 
-def delete_collection(chroma_path: str, collection_name: str):
-    try:
-        chroma_client = PersistentClient(path=chroma_path)
-        chroma_client.delete_collection(collection_name)
-        logger.info(f"deleted collection={collection_name} from path={chroma_path}")
-        print(f"Collection {collection_name} deleted successfully.")
-    except Exception as e:
-        logger.exception(f"failed to delete collection={collection_name} from path={chroma_path}")
-        raise Exception(f"Unable to delete collection: {e}") from e
-
-
-def add_documents_to_vector_store(documents: list[Document], vector_store: Chroma):
-    for i in range(0, len(documents), MAX_CHROMA_BATCH):
-        batch = documents[i : i + MAX_CHROMA_BATCH]
-        vector_store.add_documents(batch)
-
-
 def ask(question: str, conversation_history: list[dict[str, str]]) -> str:
     logger.info(f"received question={question}")
     logger.debug(f"current conversation_history={to_json_log(conversation_history)}")
@@ -409,7 +389,7 @@ if __name__ == "__main__":
 
     vector_store = Chroma(collection_name="bid_info_json", embedding_function=embeddings, persist_directory=str(CHROMA_DB_PATH))
 
-    documents = load_data(vector_store, LoadDataStrategy.AddNew)
+    documents = load_data(vector_store, LoadDataStrategy.OldDataOnly)
     print("finished loading documents, count=", len(documents))
 
     indexed_documents: list[IndexedDocument] = [build_indexed_document(document) for document in documents]
