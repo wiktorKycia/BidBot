@@ -36,30 +36,32 @@ Output: ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5"]
 """)
 
 
-async def tag_file(filename: str) -> int:
-    filepath = PARSED_DIR / filename
-    data: dict = await read_json(filepath)
-    try:
-        if len(data["enrichment"]["tags"]) > 0:  # nie trzeba tagować, bo tagi już są
-            return 0
-    except KeyError as e:
-        logger.info(f"Niepełna struktura w pliku: {filename}, wyjątek {e!r} obługiwany")
-        data["enrichment"]: dict = {"tags": []}
+async def tag_file(filename: str, semaphore: asyncio.Semaphore) -> int:
+    async with semaphore:
+        filepath = PARSED_DIR / filename
+        data: dict = await read_json(filepath)
+        try:
+            if len(data["enrichment"]["tags"]) > 0:  # nie trzeba tagować, bo tagi już są
+                return 0
+        except KeyError as e:
+            logger.info(f"Niepełna struktura w pliku: {filename}, wyjątek {e!r} obługiwany")
+            data["enrichment"]: dict = {"tags": []}
 
-    response = await llm.ainvoke([system_message, HumanMessage(content=json.dumps(data))])
-    tags = response.tags
-    logger.debug(f"Otagowano {filename} tagami: {tags}")
+        response = await llm.ainvoke([system_message, HumanMessage(content=json.dumps(data))])
+        tags = response.tags
+        logger.debug(f"Otagowano {filename} tagami: {tags}")
 
-    data["enrichment"]["tags"] = tags
+        data["enrichment"]["tags"] = tags
 
-    await save_json(filepath, data)
-    return 1  # helps count how many files were tagged
+        await save_json(filepath, data)
+        return 1  # helps count how many files were tagged
 
 
 async def main():
     filenames = [f.name for f in PARSED_DIR.iterdir() if f.is_file()]
 
-    tasks = [tag_file(filename) for filename in filenames]
+    semaphore = asyncio.Semaphore(50)  # Limit concurrent operations
+    tasks = [tag_file(filename, semaphore) for filename in filenames]
 
     results = await asyncio.gather(*tasks, return_exceptions=True)
     tagged_correctly = 0
