@@ -7,4 +7,4 @@ data_
 data_old
 .env
 logs
-chroma_langchain_db/
+chroma_langchain_db*
