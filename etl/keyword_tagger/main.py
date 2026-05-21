@@ -1,8 +1,6 @@
 import asyncio
 import json
 import logging
-import os
-
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
@@ -41,27 +39,25 @@ Output: ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5"]
 async def tag_file(filename: str) -> int:
     filepath = PARSED_DIR / filename
     data: dict = await read_json(filepath)
-    if len(data["enrichment"]["tags"]) > 0:  # nie trzeba tagować, bo tagi już są
-        return 0
+    try:
+        if len(data["enrichment"]["tags"]) > 0:  # nie trzeba tagować, bo tagi już są
+            return 0
+    except KeyError as e:
+        logger.info(f"Niepełna struktura pliku: {filename}, wyjątek {e} obługiwany")
+        data["enrichment"]: dict = {"tags": []}
 
     response = await llm.ainvoke([system_message, HumanMessage(content=json.dumps(data))])
     tags = response.tags
     logger.debug(f"Otagowano {filename} tagami: {tags}")
 
-    if "enrichment" not in data:
-        data["enrichment"] = {}
-
-    if "tags" not in data["enrichment"]:
-        data["enrichment"]["tags"] = tags
-    else:
-        data["enrichment"]["tags"].extend(tags)
+    data["enrichment"]["tags"] = tags
 
     await save_json(filepath, data)
     return 1  # helps count how many files were tagged
 
 
 async def main():
-    filenames = os.listdir(PARSED_DIR)
+    filenames = [f.name for f in PARSED_DIR.iterdir() if f.is_file()]
 
     tasks = [tag_file(filename) for filename in filenames]
 
@@ -69,7 +65,7 @@ async def main():
     tagged_correctly = 0
     for res in results:
         if isinstance(res, Exception):
-            logger.error(f"Błąd przy tagowaniu pliku: {res!r}")
+            logger.exception(f"Błąd przy tagowaniu pliku: {res!r}")
         else:
             tagged_correctly += res
 
