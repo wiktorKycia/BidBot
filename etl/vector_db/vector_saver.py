@@ -25,7 +25,7 @@ def convert_file(filepath: Path) -> list[Document]:
     if not loader:
         logger.warning(f"Unsupported file suffix for: {filepath}")
         return []
-        
+
     try:
         docs = loader.load()
     except Exception as e:
@@ -58,7 +58,6 @@ async def extend_document(document: Document) -> list[Document]:
     print(f"json Metadata:  {document.metadata}")
     # print(f"json Content:  {document.page_content}")
     print(f"attachments count: {len(offer['scraper_attachments'])}")
-
 
     attachments_list = offer["scraper_attachments"]
     attachment_documents: list[Document] = []
@@ -144,7 +143,7 @@ def load_data(vector_store: Chroma, load_data_strategy: LoadDataStrategy = 1) ->
             logger.info(f"new documents prepared to load, count={len(documents)}")
 
             new_docs = extend_and_save_documents(vector_store, documents)
-            
+
             # Append existing old documents so the total list returned contains both
             for doc, meta in zip(existing_data["documents"], existing_data["metadatas"], strict=True):
                 new_docs.append(Document(page_content=doc, metadata=meta))

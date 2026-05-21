@@ -13,6 +13,7 @@ dependencies = [
     "beautifulsoup4>=4.14.3",
     "chromadb>=1.5.9",
     "dotenv>=0.9.9",
+    "fastapi>=0.136.1",
     "jq>=1.11.0",
     "langchain>=1.2.18",
     "langchain-chroma>=1.1.0",
@@ -24,6 +25,7 @@ dependencies = [
     "pypdf>=6.11.0",
     "python-docx>=1.2.0",
     "requests==2.34.1",
+    "streamlit>=1.57.0",
     "tzdata>=2026.2",
     "unstructured>=0.22.29",
 ]
