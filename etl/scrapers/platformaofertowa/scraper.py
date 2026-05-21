@@ -3,6 +3,7 @@ import email.message
 import hashlib
 import logging
 import mimetypes
+import random
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urljoin, urlparse
@@ -112,20 +113,14 @@ def is_fatal_error(e):
 
 @backoff.on_exception(
     backoff.expo,
-    (aiohttp.ClientError, asyncio.TimeoutError),
+    (aiohttp.ClientError, asyncio.TimeoutError, ConnectionError, OSError),
     max_tries=3,
     giveup=is_fatal_error,
     logger=logger,
 )
 async def fetch_html(session: aiohttp.ClientSession, url: str, semaphore: asyncio.Semaphore) -> str:
     async with semaphore:
-        domain = urlparse(url).netloc
-        if "ted.europa.eu" in domain:
-            await asyncio.sleep(2.0)
-        elif "platformazakupowa.pl" in domain:
-            await asyncio.sleep(1.0)
-        else:
-            await asyncio.sleep(0.5)
+        await asyncio.sleep(random.uniform(2.0, 4.0))
 
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0",
@@ -135,6 +130,62 @@ async def fetch_html(session: aiohttp.ClientSession, url: str, semaphore: asynci
         async with session.get(url, headers=headers) as response:
             response.raise_for_status()
             return await response.text()
+
+
+@backoff.on_exception(
+    backoff.expo,
+    (aiohttp.ClientError, asyncio.TimeoutError, ConnectionError, OSError),
+    max_tries=3,
+    giveup=is_fatal_error,
+    logger=logger,
+)
+async def fetch_attachments_metadata(session: aiohttp.ClientSession, notice_id: str, semaphore: asyncio.Semaphore) -> set:
+    api_attachments_url = f"https://api.platformaofertowa.pl/tenders/tender/{notice_id}/attachments"
+
+    attachments_list_headers = {
+        "Host": "api.platformaofertowa.pl",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:150.0) Gecko/20100101 Firefox/150.0",
+        "Accept": "application/json",
+        "Accept-Language": "pl,en;q=0.9,en-US;q=0.8",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Referer": "https://platformaofertowa.pl/",
+        "content-type": "application/json",
+        "Origin": "https://platformaofertowa.pl",
+        "Sec-GPC": "1",
+        "Connection": "keep-alive",
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "same-site",
+        "Priority": "u=4",
+        "TE": "trailers",
+    }
+
+    attachment_links = set()
+    base_api_sleep = 300
+    api_penalty_multiplier = 1
+
+    while True:
+        async with semaphore:
+            await asyncio.sleep(random.uniform(2.0, 4.0))
+
+            async with session.get(api_attachments_url, headers=attachments_list_headers) as resp:
+                if resp.status == 429:
+                    current_sleep = base_api_sleep * api_penalty_multiplier
+                    logger.warning(f"Otrzymano HTTP 429 dla API załączników ({notice_id}). Czyszczę sesję i usypiam na {current_sleep / 60} min...")
+                    session.cookie_jar.clear()
+                    await asyncio.sleep(current_sleep)
+                    api_penalty_multiplier += 1
+                    continue
+
+                resp.raise_for_status()
+
+                attachments_data = await resp.json()
+                for att in attachments_data:
+                    att_id = att.get("id")
+                    if att_id:
+                        download_url = f"https://api.platformaofertowa.pl/tenders/attachment/download/{att_id}"
+                        attachment_links.add(download_url)
+                return attachment_links
 
 
 @backoff.on_exception(
@@ -170,70 +221,98 @@ async def download_file(
         "downloaded": False,
     }
 
-    async with semaphore:
-        domain = urlparse(url).netloc
-        if "ted.europa.eu" in domain:
-            await asyncio.sleep(2.0)
-        elif "platformazakupowa.pl" in domain:
-            await asyncio.sleep(1.0)
-        else:
-            await asyncio.sleep(0.5)
+    base_sleep_on_limit = 300
+    penalty_multiplier = 1
 
-        async with session.get(url) as response:
-            response.raise_for_status()
+    while True:
+        async with semaphore:
+            await asyncio.sleep(random.uniform(2.0, 4.0))
 
-            # pierwsze to pdf z kodem 429, a drugie to ostrzeżenie o dzieleniu i łączeniu plików
-            if response.content_length in (154853, 528025):
-                logger.warning("Pominięto plik z ostrzeżeniem")
-                return metadata
+            har_headers = {
+                "Host": "api.platformaofertowa.pl",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:150.0) Gecko/20100101 Firefox/150.0",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "pl,en;q=0.9,en-US;q=0.8",
+                "Accept-Encoding": "gzip, deflate, br",
+                "Sec-GPC": "1",
+                "Alt-Used": "api.platformaofertowa.pl",
+                "Connection": "keep-alive",
+                "Referer": "https://platformaofertowa.pl/",
+                "Upgrade-Insecure-Requests": "1",
+                "Sec-Fetch-Dest": "document",
+                "Sec-Fetch-Mode": "navigate",
+                "Sec-Fetch-Site": "same-site",
+                "Sec-Fetch-User": "?1",
+                "Priority": "u=0, i",
+                "TE": "trailers",
+            }
 
-            content_type = response.headers.get("Content-Type", "").lower()
-            if "text/html" in content_type:
-                logger.warning(f"Ominięto plik, ponieważ URL zwraca stronę HTML: {url}")
-                metadata["downloaded"] = False
-                return metadata
+            async with session.get(url, headers=har_headers) as response:
+                if response.status == 429:
+                    current_sleep = base_sleep_on_limit * penalty_multiplier
+                    logger.warning(f"Otrzymano HTTP 429 dla {url}. Czyszczę sesję i usypiam scraper na {current_sleep / 60} min...")
+                    session.cookie_jar.clear()
+                    await asyncio.sleep(current_sleep)
+                    penalty_multiplier += 1
+                    continue
 
-            cd_header = response.headers.get("Content-Disposition")
-            if cd_header:
-                msg = email.message.Message()
-                msg["Content-Disposition"] = cd_header
-                cd_filename = msg.get_filename()
-                if cd_filename:
-                    sanitized_cd_filename = Path(cd_filename).name
-                    if sanitized_cd_filename:
-                        filename = sanitized_cd_filename
-                        filepath = save_dir / filename
+                response.raise_for_status()
 
-            if "." not in filename:
-                content_type = response.headers.get("Content-Type", "")
-                ext = mimetypes.guess_extension(content_type) or ".bin"
-                filename += ext
-                filepath = save_dir / filename
+                if response.content_length in (154853, 528025):
+                    current_sleep = base_sleep_on_limit * penalty_multiplier
+                    logger.warning(f"Wykryto PDF z ostrzeżeniem o limitach! Czyszczę sesję i usypiam scraper na {current_sleep / 60} min...")
+                    session.cookie_jar.clear()
+                    await asyncio.sleep(current_sleep)
+                    penalty_multiplier += 1
+                    continue
 
-            metadata["filename"] = filename
-            metadata["local_path"] = str(filepath.relative_to(BASE_DIR))
+                content_type = response.headers.get("Content-Type", "").lower()
+                if "text/html" in content_type:
+                    logger.warning(f"Ominięto plik, ponieważ URL zwraca stronę HTML: {url}")
+                    metadata["downloaded"] = False
+                    return metadata
 
-            if filepath.exists():
-                metadata["size_bytes"] = filepath.stat().st_size
+                cd_header = response.headers.get("Content-Disposition")
+                if cd_header:
+                    msg = email.message.Message()
+                    msg["Content-Disposition"] = cd_header
+                    cd_filename = msg.get_filename()
+                    if cd_filename:
+                        sanitized_cd_filename = Path(cd_filename).name
+                        if sanitized_cd_filename:
+                            filename = sanitized_cd_filename
+                            filepath = save_dir / filename
+
+                if "." not in filename:
+                    content_type = response.headers.get("Content-Type", "")
+                    ext = mimetypes.guess_extension(content_type) or ".bin"
+                    filename += ext
+                    filepath = save_dir / filename
+
+                metadata["filename"] = filename
+                metadata["local_path"] = str(filepath.relative_to(BASE_DIR))
+
+                if filepath.exists():
+                    metadata["size_bytes"] = filepath.stat().st_size
+                    metadata["downloaded"] = True
+                    return metadata
+
+                temp_filepath = filepath.with_suffix(".tmp")
+                size = 0
+
+                async with aiofiles.open(temp_filepath, mode="wb") as f:
+                    async for chunk in response.content.iter_chunked(64 * 1024):
+                        if chunk:
+                            await f.write(chunk)
+                            size += len(chunk)
+
+                temp_filepath.rename(filepath)
+
+                metadata["size_bytes"] = size
                 metadata["downloaded"] = True
+                logger.info(f"Pobrano plik: {filename} ({size} bytes)")
+
                 return metadata
-
-            temp_filepath = filepath.with_suffix(".tmp")
-            size = 0
-
-            async with aiofiles.open(temp_filepath, mode="wb") as f:
-                async for chunk in response.content.iter_chunked(64 * 1024):
-                    if chunk:
-                        await f.write(chunk)
-                        size += len(chunk)
-
-            temp_filepath.rename(filepath)
-
-            metadata["size_bytes"] = size
-            metadata["downloaded"] = True
-            logger.info(f"Pobrano plik: {filename} ({size} bytes)")
-
-            return metadata
 
 
 async def check_page_exists(session: aiohttp.ClientSession, page: int) -> bool:
@@ -318,28 +397,11 @@ async def process_single_notice(
     doc = BeautifulSoup(raw_html, "lxml")
     clean_description = doc.get_text(separator="\n", strip=True)
 
-    attachment_links = set()
-    valid_link_keywords = [
-        ".pdf",
-        ".zip",
-        ".7z",
-        ".rar",
-        ".doc",
-        ".docx",
-        ".xls",
-        ".xlsx",
-        "download",
-        "file",
-        "viewer",
-    ]
-
-    for a_tag in doc.find_all("a", href=True):
-        href = str(a_tag.get("href", ""))
-        href_lower = href.lower()
-
-        if any(ext in href_lower for ext in valid_link_keywords):
-            full_link = urljoin(original_url, href)
-            attachment_links.add(full_link)
+    try:
+        attachment_links = await fetch_attachments_metadata(session, notice_id, html_semaphore)
+    except Exception as e:
+        logger.error(f"Ostateczny błąd pobierania API po kilku próbach dla {notice_id}: {e}")
+        attachment_links = set()
 
     tender_attachments_dir = ATTACHMENTS_DIR / notice_id
     if attachment_links:
@@ -520,15 +582,13 @@ async def main():
             total_pages = await get_total_pages(session)
 
             logger.info(f"Rozpoczęcie pobierania {total_pages} stron...")
-            tasks = [process_list_page(session, page, last_run_date, html_semaphore, file_semaphore) for page in range(1, total_pages + 1)]
 
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-
-            for res in results:
-                if isinstance(res, Exception):
-                    logger.error(f"Błąd przy taskach głównych stron: {res!r}")
-                else:
+            for page in range(1, total_pages + 1):
+                try:
+                    res = await process_list_page(session, page, last_run_date, html_semaphore, file_semaphore)
                     total_downloaded += res
+                except Exception as e:
+                    logger.error(f"Błąd przy przetwarzaniu strony {page}: {e!r}")
 
     finally:
         set_last_run_date(current_run_date)
