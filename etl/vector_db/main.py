@@ -280,6 +280,8 @@ def hybrid_retrieve(question: str, conversation_history: list[dict[str, str]]) -
     seen_texts: set[str] = set()
 
     for record in exact_matches:
+        if len(combined) >= max(plan.top_k, 5):
+            break
         if record.raw_text not in seen_texts:
             seen_texts.add(record.raw_text)
             combined.append(record)
