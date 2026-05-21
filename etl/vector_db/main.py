@@ -90,8 +90,8 @@ def build_indexed_document(document: Document) -> IndexedDocument:
 def format_indexed_document(record: IndexedDocument) -> str:
     """converts one IndexedDocument into readable text for the prompt"""
     lines = [
-        f"Source: {record.source_url}",
         f"Title: {record.title}",
+        f"Source: {record.source_url}",
     ]
     if record.offer_id:
         lines.append(f"Transaction ID: {record.offer_id}")
@@ -282,17 +282,12 @@ def hybrid_retrieve(question: str, conversation_history: list[dict[str, str]]) -
 
     combined: list[IndexedDocument] = []
     seen_texts: set[str] = set()
-    
-    # We want ALL exact matches, and then semantic matches up to top_k additional or total?
-    # Actually let's just include all exact matches, and add semantic matches until we have enough.
-    
+
     for record in exact_matches:
         if record.raw_text not in seen_texts:
             seen_texts.add(record.raw_text)
             combined.append(record)
-            
-    # How many semantic matches to add?
-    # We can add top_k semantic matches.
+
     added_semantic = 0
     for record in semantic_matches:
         if added_semantic >= plan.top_k:
