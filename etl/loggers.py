@@ -1,22 +1,7 @@
 import logging.config
 from pathlib import Path
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-DATA_DIR = BASE_DIR / "data"
-RAW_DIR = DATA_DIR / "raw_html"
-PARSED_DIR = DATA_DIR / "parsed"
-ATTACHMENTS_DIR = DATA_DIR / "attachments"
 LOG_DIR = Path("logs")
-LAST_RUN_FILE = DATA_DIR / "last_run.txt"
-MAX_ATTACHMENTS = 15
-MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024  # 25 MB - max rozmiar pobieranego pliku
-MAX_UNCOMPRESSED_SIZE = 250 * 1024 * 1024  # 250 MB - max waga po rozpakowaniu
-MAX_ZIP_FILES = 1000  # Max ilość plików wewnątrz zipa
-MAX_ZIP_RATIO = 100  # Max stosunek rozmiaru rozpakowanego do oryginalnego
-
-for d in [RAW_DIR, PARSED_DIR, ATTACHMENTS_DIR, LOG_DIR]:
-    if not d.exists():
-        d.mkdir(parents=True, exist_ok=True)
 
 LOGGING_CONFIG = {
     "version": 1,
@@ -41,6 +26,15 @@ LOGGING_CONFIG = {
             "level": "DEBUG",
             "encoding": "utf-8",
         },
+        "rotatingFile": {
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": LOG_DIR / "vector_db.log",
+            "maxBytes": 5000000,
+            "backupCount": 1,
+            "formatter": "standard",
+            "level": "DEBUG",
+            "encoding": "utf-8",
+        },
     },
     "loggers": {
         "": {
@@ -49,6 +43,12 @@ LOGGING_CONFIG = {
             "propagate": True,
         },
         "aiohttp": {"level": "WARNING"},
+        "httpx": {"level": "WARNING"},
+        "vector_db": {
+            "handlers": ["rotatingFile"],
+            "level": "DEBUG",
+            "propagate": False,
+        },
     },
 }
 
@@ -63,3 +63,7 @@ DEFAULT_HEADERS = {
 
 def setup_logging():
     logging.config.dictConfig(LOGGING_CONFIG)
+
+
+if not LOG_DIR.exists():
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
