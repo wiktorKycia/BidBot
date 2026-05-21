@@ -70,7 +70,7 @@ async def main():
     tagged_correctly = 0
     for res in results:
         if isinstance(res, Exception):
-            logger.error(f"Błąd przy tagowaniu pliku: {res!r}")
+            logger.error("Błąd przy tagowaniu pliku: %r", res, exc_info=res)
         else:
             tagged_correctly += res
 
