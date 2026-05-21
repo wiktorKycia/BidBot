@@ -1,12 +1,13 @@
 import asyncio
 import json
 import logging
-import os
-
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
+from pydantic import BaseModel, Field
 
-from etl.settings import MODEL, PARSED_DIR, require_openai_api_key, setup_logging
+from etl.llms import MODEL, require_openai_api_key
+from etl.loggers import setup_logging
+from etl.scrapers.settings import PARSED_DIR
 from etl.utils import read_json, save_json
 
 OPENAI_API_KEY = require_openai_api_key()
@@ -14,7 +15,10 @@ OPENAI_API_KEY = require_openai_api_key()
 setup_logging()
 logger = logging.getLogger(__name__)
 
-llm = ChatOpenAI(model=MODEL, api_key=OPENAI_API_KEY)
+class TagsOutput(BaseModel):
+    tags: list[str] = Field(description="List of 3 to 5 high-quality keywords")
+
+llm = ChatOpenAI(model=MODEL, api_key=OPENAI_API_KEY).with_structured_output(TagsOutput)
 system_message = SystemMessage("""
 You are an expert in public procurement and document indexing.
 Your task is to analyze a JSON document representing a public procurement offer and generate a list of 3 to 5 high-quality keywords.
@@ -32,38 +36,38 @@ Output: ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5"]
 """)
 
 
-async def tag_file(filename: str) -> int:
-    filepath = PARSED_DIR / filename
-    data: dict = await read_json(filepath)
-    if len(data["enrichment"]["tags"]) > 0:  # nie trzeba tagować, bo tagi już są
-        return 0
+async def tag_file(filename: str, semaphore: asyncio.Semaphore) -> int:
+    async with semaphore:
+        filepath = PARSED_DIR / filename
+        data: dict = await read_json(filepath)
+        try:
+            if len(data["enrichment"]["tags"]) > 0:  # nie trzeba tagować, bo tagi już są
+                return 0
+        except KeyError as e:
+            logger.info(f"Niepełna struktura w pliku: {filename}, wyjątek {e!r} obługiwany")
+            data["enrichment"]: dict = {"tags": []}
 
-    response = llm.invoke([system_message, HumanMessage(content=json.dumps(data))])
-    tags = list(json.loads(response.content))
-    logger.debug(f"Otagowano {filename} tagami: {tags}")
+        response = await llm.ainvoke([system_message, HumanMessage(content=json.dumps(data))])
+        tags = response.tags
+        logger.debug(f"Otagowano {filename} tagami: {tags}")
 
-    if "enrichment" not in data:
-        data["enrichment"] = {}
-
-    if "tags" not in data["enrichment"]:
         data["enrichment"]["tags"] = tags
-    else:
-        data["enrichment"]["tags"].extend(tags)
 
-    await save_json(filepath, data)
-    return 1  # helps count how many files were tagged
+        await save_json(filepath, data)
+        return 1  # helps count how many files were tagged
 
 
 async def main():
-    filenames = os.listdir(PARSED_DIR)
+    filenames = [f.name for f in PARSED_DIR.iterdir() if f.is_file()]
 
-    tasks = [tag_file(filename) for filename in filenames]
+    semaphore = asyncio.Semaphore(50)  # Limit concurrent operations
+    tasks = [tag_file(filename, semaphore) for filename in filenames]
 
     results = await asyncio.gather(*tasks, return_exceptions=True)
     tagged_correctly = 0
     for res in results:
         if isinstance(res, Exception):
-            logger.error(f"Błąd przy tagowaniu pliku: {res!r}")
+            logger.exception(f"Błąd przy tagowaniu pliku: {res!r}")
         else:
             tagged_correctly += res
 
