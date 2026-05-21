@@ -89,6 +89,10 @@ occurred in the previous messages
 source even when reporting the smallest detail of an offer.
 6. If no offers or notices are available in the provided context, clearly inform the user that no matching data is currently available
 7. You must reply in pure text format without any markdown features to enhance readability in the output console
+8. Present information naturally without exposing technical JSON keys or internal metadata names in parentheses like "(industry)", 
+"(offer/notice ID)", "(issuer)", "(submittingOffersDeadline)" or "(contractNature)". Just show the values with clear, 
+natural language labels in the user's language.
+9. Avoid duplicating links or sources for single offers; display the URL/source link only once per offer.
 </rules>
 
 <context>

@@ -33,7 +33,10 @@ def convert_file(filepath: Path) -> list[Document]:
         return []
 
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
-    return text_splitter.split_documents(docs)
+    docs = text_splitter.split_documents(docs)
+    for i, doc in enumerate(docs):
+        doc.metadata["seq_num"] = i+1
+    return docs
 
 
 def create_loader(filepath: Path):
@@ -45,7 +48,6 @@ def create_loader(filepath: Path):
         return UnstructuredExcelLoader(str(filepath))
     elif filepath.suffix == ".xml":
         return UnstructuredXMLLoader(str(filepath))
-    logger.exception(f"unsupported file suffix for file: {filepath}")
     return None
 
 
@@ -62,18 +64,23 @@ async def extend_document(document: Document) -> list[Document]:
     attachments_list = offer["scraper_attachments"]
     attachment_documents: list[Document] = []
     if attachments_list:
+        convert_tasks = []
         for attachment in attachments_list:
             if attachment["downloaded"]:
                 full_path = ATTACHMENTS_DIR / offer_id / attachment["filename"]
-                attachment_documents.extend(convert_file(full_path))
-    print(f"attachment documents count: {len(attachment_documents)}")
+                convert_tasks.append(asyncio.to_thread(convert_file, full_path))
+        if convert_tasks:
+            results = await asyncio.gather(*convert_tasks, return_exceptions=True)
+            for res in results:
+                if isinstance(res, Exception):
+                    logger.exception(f"Error converting document: {res!r}")
+                else:
+                    attachment_documents.extend(res)
 
     for doc in attachment_documents:
         doc.metadata["offer_id"] = offer_id
         doc.metadata["source_type"] = "attachment"
         doc.metadata["title"] = offer["title"]
-        print(f"Metadata: {doc.metadata}")
-        print(f"Content {doc.page_content}")
 
     return [document, *attachment_documents]
 
@@ -82,6 +89,7 @@ def add_documents_to_vector_store(documents: list[Document], vector_store: Chrom
     for i in range(0, len(documents), MAX_CHROMA_BATCH):
         batch = documents[i : i + MAX_CHROMA_BATCH]
         vector_store.add_documents(batch)
+        logger.info(f"Added {(i+1)*MAX_CHROMA_BATCH} documents to vector store")
 
 
 def load_json_docs_from_directory(dirpath: Path) -> list[Document]:
@@ -90,33 +98,46 @@ def load_json_docs_from_directory(dirpath: Path) -> list[Document]:
         glob="**/*.json",
         loader_cls=JSONLoader,  # type: ignore[arg-type]
         loader_kwargs={"jq_schema": ".", "text_content": False},
+        use_multithreading=True,
     )
     return loader.load()
 
 
 def extend_and_save_documents(vector_store: Chroma, documents: list[Document]) -> list[Document]:
-    async def extend_documents(docs):
+    async def process_documents(docs):
         tasks = [extend_document(document) for document in docs]
-        return await asyncio.gather(*tasks, return_exceptions=True)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    results = asyncio.run(extend_documents(documents))
+        extended_documents = []
+        for res in results:
+            if isinstance(res, Exception):
+                logger.exception(f"Error while extending document: {res!r}")
+            else:
+                extended_documents.extend(res)
 
-    extended_documents = []
+        add_documents_to_vector_store(extended_documents, vector_store)
+        return extended_documents
 
-    for res in results:
-        if isinstance(res, Exception):
-            logger.exception(f"Error while extending document: {res!r}")
-        else:
-            extended_documents.extend(res)
-
-    add_documents_to_vector_store(extended_documents, vector_store)
+    extended_documents = asyncio.run(process_documents(documents))
     logger.info(f"added documents to vector store count={len(extended_documents)}")
     return extended_documents
 
 
 def load_data(vector_store: Chroma, load_data_strategy: LoadDataStrategy = 1) -> list[Document]:
-    existing_data = vector_store.get()
-    existing_ids = existing_data["ids"]
+    # Instead of pulling all existing data at once which can cause "too many SQL variables", we batch it
+    total_count = vector_store._collection.count()
+    existing_ids = []
+    existing_metadatas = []
+    existing_documents = []
+
+    for offset in range(0, total_count, MAX_CHROMA_BATCH):
+        batch = vector_store.get(limit=MAX_CHROMA_BATCH, offset=offset)
+        existing_ids.extend(batch.get("ids", []))
+        if batch.get("metadatas"):
+            existing_metadatas.extend(batch["metadatas"])
+        if batch.get("documents"):
+            existing_documents.extend(batch["documents"])
+
     documents = []
 
     if len(existing_ids) == 0:
@@ -124,10 +145,11 @@ def load_data(vector_store: Chroma, load_data_strategy: LoadDataStrategy = 1) ->
 
     match load_data_strategy:
         case LoadDataStrategy.ReloadAll:
-            # clear collection before adding documents
+            # clear collection before adding documents in batches to avoid SQL limit
             if len(existing_ids) > 0:
                 logger.info(f"clearing existing vector store ids count={len(existing_ids)}")
-                vector_store.delete(existing_ids)
+                for i in range(0, len(existing_ids), MAX_CHROMA_BATCH):
+                    vector_store.delete(existing_ids[i : i + MAX_CHROMA_BATCH])
 
             documents = load_json_docs_from_directory(PARSED_DIR)
             logger.info(f"loaded documents from parsed_json_path={PARSED_DIR} count={len(documents)}")
@@ -138,20 +160,20 @@ def load_data(vector_store: Chroma, load_data_strategy: LoadDataStrategy = 1) ->
             documents = load_json_docs_from_directory(PARSED_DIR)
             logger.info(f"loaded documents from parsed_json_path={PARSED_DIR} count={len(documents)}")
 
-            existing_sources = {meta.get("source") for meta in existing_data["metadatas"] if meta}
+            existing_sources = {meta.get("source") for meta in existing_metadatas if meta}
             documents = [doc for doc in documents if doc.metadata["source"] not in existing_sources]
             logger.info(f"new documents prepared to load, count={len(documents)}")
 
             new_docs = extend_and_save_documents(vector_store, documents)
 
             # Append existing old documents so the total list returned contains both
-            for doc, meta in zip(existing_data["documents"], existing_data["metadatas"], strict=True):
-                new_docs.append(Document(page_content=doc, metadata=meta))
+            for doc, meta in zip(existing_documents, existing_metadatas, strict=True):
+                documents.append(Document(page_content=doc, metadata=meta))
             documents = new_docs
 
         case LoadDataStrategy.OldDataOnly:
             logger.info(f"loading documents from vector store count={len(existing_ids)}")
-            for doc, meta in zip(existing_data["documents"], existing_data["metadatas"], strict=True):
+            for doc, meta in zip(existing_documents, existing_metadatas, strict=True):
                 documents.append(Document(page_content=doc, metadata=meta))
 
         case _:

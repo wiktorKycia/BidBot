@@ -3,6 +3,7 @@
 __pycache__
 
 data
+data_
 data_old
 .env
 logs

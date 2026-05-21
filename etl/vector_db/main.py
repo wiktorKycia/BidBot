@@ -14,6 +14,7 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from etl.llms import MODEL, require_openai_api_key
 from etl.loggers import setup_logging
 from etl.vector_db.models import IndexedDocument, LoadDataStrategy, RetrievalPlan
+from etl.vector_db.models import IndexedDocument, RetrievalPlan, LoadDataStrategy
 from etl.vector_db.prompts import main_system_message_template, use_search_system_message_template
 from etl.vector_db.vector_saver import load_data
 
@@ -70,14 +71,16 @@ def build_indexed_document(document: Document) -> IndexedDocument:
     raw_text = document.page_content.strip()
     try:
         payload = json.loads(raw_text)
+        if not isinstance(payload, dict):
+            payload = {}
     except json.JSONDecodeError:
         payload = {}
 
     # extract a source path from metadata
-    source = payload.get("scraper_url")
-    filepath = document.metadata.get("source")
-    title = document.metadata.get("title", "")
-    offer_id = document.metadata.get("offer_id")
+    source = payload.get("scraper_url", "no url provided")
+    filepath = document.metadata.get("source", "document not downloaded")
+    title = document.metadata.get("title", "unknown")
+    offer_id = document.metadata.get("offer_id", "unknown")
 
     return IndexedDocument(document=document, source_url=source, filepath=filepath, title=title, offer_id=offer_id, raw_text=raw_text)
 
@@ -85,8 +88,8 @@ def build_indexed_document(document: Document) -> IndexedDocument:
 def format_indexed_document(record: IndexedDocument) -> str:
     """converts one IndexedDocument into readable text for the prompt"""
     lines = [
-        f"Source: {record.source_url}",
         f"Title: {record.title}",
+        f"Source: {record.source_url}",
     ]
     if record.offer_id:
         lines.append(f"Transaction ID: {record.offer_id}")
@@ -278,16 +281,11 @@ def hybrid_retrieve(question: str, conversation_history: list[dict[str, str]]) -
     combined: list[IndexedDocument] = []
     seen_texts: set[str] = set()
 
-    # We want ALL exact matches, and then semantic matches up to top_k additional or total?
-    # Actually let's just include all exact matches, and add semantic matches until we have enough.
-
     for record in exact_matches:
         if record.raw_text not in seen_texts:
             seen_texts.add(record.raw_text)
             combined.append(record)
 
-    # How many semantic matches to add?
-    # We can add top_k semantic matches.
     added_semantic = 0
     for record in semantic_matches:
         if added_semantic >= plan.top_k:
@@ -309,23 +307,6 @@ def hybrid_retrieve(question: str, conversation_history: list[dict[str, str]]) -
     )
 
     return plan, combined
-
-
-def delete_collection(chroma_path: str, collection_name: str):
-    try:
-        chroma_client = PersistentClient(path=chroma_path)
-        chroma_client.delete_collection(collection_name)
-        logger.info(f"deleted collection={collection_name} from path={chroma_path}")
-        print(f"Collection {collection_name} deleted successfully.")
-    except Exception as e:
-        logger.exception(f"failed to delete collection={collection_name} from path={chroma_path}")
-        raise Exception(f"Unable to delete collection: {e}") from e
-
-
-def add_documents_to_vector_store(documents: list[Document], vector_store: Chroma):
-    for i in range(0, len(documents), MAX_CHROMA_BATCH):
-        batch = documents[i : i + MAX_CHROMA_BATCH]
-        vector_store.add_documents(batch)
 
 
 def ask(question: str, conversation_history: list[dict[str, str]]) -> str:
@@ -409,7 +390,7 @@ if __name__ == "__main__":
 
     vector_store = Chroma(collection_name="bid_info_json", embedding_function=embeddings, persist_directory=str(CHROMA_DB_PATH))
 
-    documents = load_data(vector_store, LoadDataStrategy.AddNew)
+    documents = load_data(vector_store, LoadDataStrategy.OldDataOnly)
     print("finished loading documents, count=", len(documents))
 
     indexed_documents: list[IndexedDocument] = [build_indexed_document(document) for document in documents]
