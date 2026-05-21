@@ -6,7 +6,9 @@ import os
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 
-from etl.settings import MODEL, PARSED_DIR, require_openai_api_key, setup_logging
+from etl.llms import MODEL, require_openai_api_key
+from etl.loggers import setup_logging
+from etl.scrapers.settings import PARSED_DIR
 from etl.utils import read_json, save_json
 
 OPENAI_API_KEY = require_openai_api_key()
