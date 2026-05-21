@@ -1,110 +1,68 @@
-import json
-from datetime import datetime
+import logging
+from collections import defaultdict
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from langchain_chroma import Chroma
-from langchain_openai import OpenAIEmbeddings
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from pydantic import BaseModel
 
-from etl.llms import require_openai_api_key
+import etl.vector_db.main as ragemain
+from etl.llms import MODEL, require_openai_api_key
+from etl.loggers import setup_logging
+from etl.vector_db.main import ask, build_indexed_document
+from etl.vector_db.models import LoadDataStrategy
+from etl.vector_db.vector_saver import load_data
 
 
-class SearchRequest(BaseModel):
-    query: str
+class ChatRequest(BaseModel):
+    message: str
+    history: list[dict[str, str]]
 
 
-class TenderDetail(BaseModel):
-    offer_id: str
-    title: str
-    score: float
-    source_url: str
-    deadline: str
-    buyer: str
-    description: str
-    full_data: str
-    raw_text_preview: str
+class ChatResponse(BaseModel):
+    answer: str
 
 
-app = FastAPI(title="BidBot Search API")
+app = FastAPI(title="BidBot Chat API")
 
 OPENAI_API_KEY = require_openai_api_key()
 
 BASE_DIR = Path(__file__).resolve().parent
 CHROMA_DB_PATH = BASE_DIR / "etl" / "vector_db" / "chroma_langchain_db"
-PARSED_DIR = BASE_DIR / "data" / "parsed"
 
 embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
 vector_store = Chroma(collection_name="bid_info_json", embedding_function=embeddings, persist_directory=str(CHROMA_DB_PATH))
 
 
-@app.post("/search", response_model=list[TenderDetail])
-def search_tenders(request: SearchRequest):
-    search_query = request.query if request.query.strip() else "przetarg"
-    raw_docs = vector_store.similarity_search_with_score(search_query, k=50)
+try:
+    setup_logging()
+except Exception:
+    pass
 
-    offers = {}
-    for doc, score in raw_docs:
-        offer_id = doc.metadata.get("offer_id", "Nieznane ID")
-        if offer_id == "Nieznane ID":
-            continue
+ragemain.logger = logging.getLogger("vector_db")
+ragemain.vector_store = vector_store
+ragemain.llm = ChatOpenAI(model=MODEL)
 
-        if offer_id not in offers:
-            offers[offer_id] = {"score": float(score), "title": doc.metadata.get("title", "Brak tytułu"), "text_chunks": []}
-        offers[offer_id]["text_chunks"].append(doc.page_content.strip())
+documents = load_data(vector_store, LoadDataStrategy.OldDataOnly)
+indexed_documents = [build_indexed_document(doc) for doc in documents]
 
-    results = []
-    for offer_id, data in offers.items():
-        payload = {}
+indexed_documents_by_id = defaultdict(list)
+indexed_documents_by_filepath = defaultdict(list)
 
-        if PARSED_DIR.exists():
-            for json_file in PARSED_DIR.rglob("*.json"):
-                if offer_id in json_file.name:
-                    try:
-                        with open(json_file, encoding="utf-8") as f:
-                            payload = json.load(f)
-                        break
-                    except Exception:
-                        pass
+for record in indexed_documents:
+    if record.offer_id:
+        indexed_documents_by_id[record.offer_id].append(record)
+    if record.filepath:
+        indexed_documents_by_filepath[record.filepath].append(record)
 
-        title = payload.get("title", data["title"])
-        source_url = payload.get("scraper_url", "Brak linku")
-
-        issuers = payload.get("issuers", [])
-        buyer = issuers[0].get("title", "Brak danych") if issuers else "Brak danych"
-
-        raw_deadline = payload.get("submittingOffersDeadline", "Brak danych")
-        if raw_deadline != "Brak danych":
-            try:
-                dt = datetime.fromisoformat(raw_deadline)
-                deadline = dt.strftime("%d.%m.%Y, godz. %H:%M")
-            except ValueError:
-                deadline = raw_deadline
-        else:
-            deadline = "Brak danych"
-
-        desc_text = payload.get("description", "")
-        tags = payload.get("enrichment", {}).get("tags", [])
-        if tags:
-            desc_text += f"\nTagi: {', '.join(tags)}"
-
-        description = desc_text.strip() if desc_text.strip() else "Brak opisu"
-
-        full_data_str = json.dumps(payload, ensure_ascii=False, indent=2) if payload else ""
-        raw_text_combined = "\n\n--- FRAGMENT Z BAZY WEKTOROWEJ ---\n\n".join(data["text_chunks"])
-
-        results.append(
-            TenderDetail(
-                offer_id=offer_id,
-                title=title,
-                score=data["score"],
-                source_url=source_url,
-                deadline=deadline,
-                buyer=buyer,
-                description=description,
-                full_data=full_data_str,
-                raw_text_preview=raw_text_combined,
-            )
-        )
-
-    return results
+ragemain.indexed_documents_by_id = indexed_documents_by_id
+ragemain.indexed_documents_by_filepath = indexed_documents_by_filepath
+@app.post("/chat", response_model=ChatResponse)
+def chat_with_bot(request: ChatRequest):
+    try:
+        bot_answer = ask(request.message, request.history)
+        return ChatResponse(answer=bot_answer)
+    except Exception as e:
+        ragemain.logger.exception(f"Krytyczny błąd podczas wywołania czatu: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
