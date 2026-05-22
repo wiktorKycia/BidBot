@@ -1,6 +1,15 @@
 import requests
 import streamlit as st
 
+from langchain_core.prompts import ChatPromptTemplate, SystemMessagePromptTemplate
+from langchain_openai import ChatOpenAI
+from etl.llms import MODEL, require_openai_api_key
+
+from api import TenderDetail
+
+OPENAI_API_KEY = require_openai_api_key()
+llm = ChatOpenAI(model=MODEL)
+
 API_URL = "http://localhost:8000/search"
 
 st.set_page_config(page_title="BidBot", layout="wide")
@@ -23,6 +32,36 @@ if search_button or search_query:
         st.error("Baza zwróciła 0 wyników.")
     else:
         st.success(f"Znaleziono przetargów: {len(results)}")
+
+        describer = ChatOpenAI(model=MODEL, temperature=0, max_retries=3)
+        
+        llm_answer = ChatPromptTemplate.from_messages(
+            [
+                SystemMessagePromptTemplate.from_template("""You are an expert assistant for analyzing public procurement tenders.
+You have access to a list of tender data objects matching the following schema:
+- offer_id (str): Unique identifier of the tender
+- title (str): Title of the tender
+- score (float): Search relevance score
+- source_url (str): URL to the original tender
+- deadline (str): Deadline for submitting offers
+- buyer (str): The entity that published the tender
+- description (str): Extracted description and tags
+- full_data (str): Raw JSON string of the complete tender data
+- raw_text_preview (str): Text chunks extracted from the tender documents
+
+Your goal is to summarize all the provided tender data and present it in a clear, user-friendly Markdown format.
+Focus on the most important aspects: buyer, deadline, and a concise summary of the requirements. Group related tenders if possible, and structure the response so the user can easily evaluate the opportunities."""),
+                (
+                    "human",
+                    "Data to summarize: {summary}",
+                ),
+            ]
+        )
+        
+        # tender_details = [TenderDetail(**item) for item in results]
+        message = describer.invoke(llm_answer.format_messages(summary=results)).content.strip()
+
+        st.markdown(message)
 
         for index, item in enumerate(results):
             title = item.get("title", "Brak tytułu")
