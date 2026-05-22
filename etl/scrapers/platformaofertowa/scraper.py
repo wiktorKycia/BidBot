@@ -352,7 +352,7 @@ async def check_page_exists(session: aiohttp.ClientSession, page: int) -> bool:
         "offset": offset,
         "active_status": 1,
         "search_config": {"reranking_limit": 1000},
-        "sort_by": "submitting_offers_deadline_asc",
+        "sort_by": "publication_date_desc",
     }
 
     headers = {
@@ -548,7 +548,7 @@ async def process_list_page(
         "offset": offset,
         "active_status": 1,
         "search_config": {"reranking_limit": 1000},
-        "sort_by": "submitting_offers_deadline_asc",
+        "sort_by": "publication_date_desc",
     }
 
     headers = {
