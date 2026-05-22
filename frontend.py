@@ -59,9 +59,12 @@ Focus on the most important aspects: buyer, deadline, and a concise summary of t
         )
         
         # tender_details = [TenderDetail(**item) for item in results]
-        message = describer.invoke(llm_answer.format_messages(summary=results)).content.strip()
+        with st.spinner("Generowanie podsumowania przez AI..."):
+            message = describer.invoke(llm_answer.format_messages(summary=results)).content.strip()
 
         st.markdown(message)
+
+        st.write("Szczegółowy opis danych pobranych z bazy: ")
 
         for index, item in enumerate(results):
             title = item.get("title", "Brak tytułu")
