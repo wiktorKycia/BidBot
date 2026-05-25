@@ -25,7 +25,7 @@ class ChatResponse(BaseModel):
     answer: str
 
 
-app = FastAPI(title="BidBot Chat API")
+app_ready = False
 
 OPENAI_API_KEY = require_openai_api_key()
 
@@ -47,7 +47,7 @@ ragemain.llm = ChatOpenAI(model=MODEL)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global indexed_documents_by_id, indexed_documents_by_filepath
+    global app_ready
     try:
         documents = load_data(vector_store, LoadDataStrategy.OldDataOnly)
         indexed_documents = [build_indexed_document(doc) for doc in documents]
@@ -60,10 +60,14 @@ async def lifespan(app: FastAPI):
                 indexed_documents_by_id[record.offer_id].append(record)
             if record.filepath:
                 indexed_documents_by_filepath[record.filepath].append(record)
+        ragemain.indexed_documents_by_id = indexed_documents_by_id
+        ragemain.indexed_documents_by_filepath = indexed_documents_by_filepath
         ragemain.logger.info("Inicjalizacja zakończona sukcesem.")
+        app_ready = True
     except Exception as e:
         ragemain.logger.exception(f"Błąd inicjalizacji: {e}")
     yield
+
 
 app = FastAPI(title="BidBot Chat API", lifespan=lifespan)
 @app.post("/chat", response_model=ChatResponse)
@@ -74,3 +78,9 @@ def chat_with_bot(request: ChatRequest):
     except Exception as e:
         ragemain.logger.exception(f"Krytyczny błąd podczas wywołania czatu: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/health")
+def health():
+    if not app_ready:
+        raise HTTPException(status_code=503, detail="initializing")
+    return {"status": "ready"}
