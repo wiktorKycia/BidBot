@@ -114,14 +114,14 @@ def plan_search(question: str, conversation_history: list[dict[str, str]]) -> Re
     history_text = format_history(conversation_history)
     planning_prompt = ChatPromptTemplate.from_messages(
         [
-            SystemMessagePromptTemplate.from_template(use_search_system_message_template),
+            SystemMessagePromptTemplate.from_template(use_search_system_message_template, partial_variables={"tags": "your_tags_value"}),
             (
                 "human",
                 "Conversation history:\n{history}\n\nCurrent question:\n{question}",
             ),
         ]
     )
-    planner = ChatOpenAI(model=MODEL, temperature=0, max_retries=3).with_structured_output(SearchPlanOutput)
+    planner = ChatOpenAI(model=MODEL, temperature=0, max_retries=3).with_structured_output(RetrievalPlan)
 
     try:
         payload = planner.invoke(planning_prompt.format_messages(history=history_text, question=question))
