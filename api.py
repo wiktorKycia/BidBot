@@ -2,6 +2,7 @@ import logging
 from collections import defaultdict
 from pathlib import Path
 
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from langchain_chroma import Chroma
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
@@ -44,20 +45,27 @@ ragemain.logger = logging.getLogger("vector_db")
 ragemain.vector_store = vector_store
 ragemain.llm = ChatOpenAI(model=MODEL)
 
-documents = load_data(vector_store, LoadDataStrategy.OldDataOnly)
-indexed_documents = [build_indexed_document(doc) for doc in documents]
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global indexed_documents_by_id, indexed_documents_by_filepath
+    try:
+        documents = load_data(vector_store, LoadDataStrategy.OldDataOnly)
+        indexed_documents = [build_indexed_document(doc) for doc in documents]
 
-indexed_documents_by_id = defaultdict(list)
-indexed_documents_by_filepath = defaultdict(list)
+        indexed_documents_by_id = defaultdict(list)
+        indexed_documents_by_filepath = defaultdict(list)
 
-for record in indexed_documents:
-    if record.offer_id:
-        indexed_documents_by_id[record.offer_id].append(record)
-    if record.filepath:
-        indexed_documents_by_filepath[record.filepath].append(record)
+        for record in indexed_documents:
+            if record.offer_id:
+                indexed_documents_by_id[record.offer_id].append(record)
+            if record.filepath:
+                indexed_documents_by_filepath[record.filepath].append(record)
+        ragemain.logger.info("Inicjalizacja zakończona sukcesem.")
+    except Exception as e:
+        ragemain.logger.exception(f"Błąd inicjalizacji: {e}")
+    yield
 
-ragemain.indexed_documents_by_id = indexed_documents_by_id
-ragemain.indexed_documents_by_filepath = indexed_documents_by_filepath
+app = FastAPI(title="BidBot Chat API", lifespan=lifespan)
 @app.post("/chat", response_model=ChatResponse)
 def chat_with_bot(request: ChatRequest):
     try:
