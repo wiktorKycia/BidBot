@@ -89,8 +89,7 @@ def add_documents_to_vector_store(documents: list[Document], vector_store: Chrom
     for i in range(0, len(documents), MAX_CHROMA_BATCH):
         batch = documents[i : i + MAX_CHROMA_BATCH]
         vector_store.add_documents(batch)
-        logger.info(f"Added {(i + 1) * MAX_CHROMA_BATCH} documents to vector store")
-
+        logger.info(f"Added batch of {len(batch)} documents to vector store. (Total processed: {i + len(batch)}/{len(documents)})")
 
 def load_json_docs_from_directory(dirpath: Path) -> list[Document]:
     loader = DirectoryLoader(
