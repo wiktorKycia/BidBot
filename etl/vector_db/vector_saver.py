@@ -25,7 +25,7 @@ def convert_file(filepath: Path) -> list[Document]:
     if not loader:
         logger.warning(f"Unsupported file suffix for: {filepath}")
         return []
-        
+
     try:
         docs = loader.load()
     except Exception as e:
@@ -35,7 +35,7 @@ def convert_file(filepath: Path) -> list[Document]:
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
     docs = text_splitter.split_documents(docs)
     for i, doc in enumerate(docs):
-        doc.metadata["seq_num"] = i+1
+        doc.metadata["seq_num"] = i + 1
     return docs
 
 
@@ -57,6 +57,9 @@ async def extend_document(document: Document) -> list[Document]:
     document.metadata["offer_id"] = offer_id
     document.metadata["source_type"] = "json"
     document.metadata["title"] = offer["title"]
+    print(f"json Metadata:  {document.metadata}")
+    # print(f"json Content:  {document.page_content}")
+    print(f"attachments count: {len(offer['scraper_attachments'])}")
 
     attachments_list = offer["scraper_attachments"]
     attachment_documents: list[Document] = []
@@ -86,7 +89,7 @@ def add_documents_to_vector_store(documents: list[Document], vector_store: Chrom
     for i in range(0, len(documents), MAX_CHROMA_BATCH):
         batch = documents[i : i + MAX_CHROMA_BATCH]
         vector_store.add_documents(batch)
-        logger.info(f"Added {(i+1)*MAX_CHROMA_BATCH} documents to vector store")
+        logger.info(f"Added {(i + 1) * MAX_CHROMA_BATCH} documents to vector store")
 
 
 def load_json_docs_from_directory(dirpath: Path) -> list[Document]:
@@ -162,7 +165,7 @@ def load_data(vector_store: Chroma, load_data_strategy: LoadDataStrategy = 1) ->
             logger.info(f"new documents prepared to load, count={len(documents)}")
 
             new_docs = extend_and_save_documents(vector_store, documents)
-            
+
             # Append existing old documents so the total list returned contains both
             for doc, meta in zip(existing_documents, existing_metadatas, strict=True):
                 documents.append(Document(page_content=doc, metadata=meta))

@@ -1,6 +1,7 @@
 from dataclasses import dataclass
-from typing import Any
 from enum import Enum
+from typing import Any
+
 
 class LoadDataStrategy(Enum):
     AddNew = 1
@@ -11,7 +12,7 @@ class LoadDataStrategy(Enum):
 @dataclass(frozen=True)
 class DocumentMetadata:
     offer_id: str
-    seq_num: int    # like a chunk index
+    seq_num: int  # like a chunk index
     source: str
     source_type: str
     title: str

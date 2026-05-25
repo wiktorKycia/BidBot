@@ -1,4 +1,3 @@
-import asyncio
 import json
 import logging
 import re
@@ -6,7 +5,6 @@ from operator import itemgetter
 from pathlib import Path
 from typing import Any
 
-from chromadb import PersistentClient
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate, SystemMessagePromptTemplate
@@ -16,7 +14,6 @@ from etl.llms import MODEL, require_openai_api_key
 from etl.loggers import setup_logging
 from etl.vector_db.models import IndexedDocument, RetrievalPlan, LoadDataStrategy
 from etl.vector_db.prompts import main_system_message_template, use_search_system_message_template
-from etl.utils import read_json
 from etl.vector_db.vector_saver import load_data
 
 OPENAI_API_KEY = require_openai_api_key()
@@ -68,7 +65,7 @@ def extract_offer_ids_from_text(*values: str) -> tuple[str, ...]:
 
 def build_indexed_document(document: Document) -> IndexedDocument:
     """converts a LangChain document into the internal"""
-    
+
     raw_text = document.page_content.strip()
     try:
         payload = json.loads(raw_text)
@@ -283,6 +280,8 @@ def hybrid_retrieve(question: str, conversation_history: list[dict[str, str]]) -
     seen_texts: set[str] = set()
 
     for record in exact_matches:
+        if len(combined) >= max(plan.top_k, 5):
+            break
         if record.raw_text not in seen_texts:
             seen_texts.add(record.raw_text)
             combined.append(record)
@@ -395,13 +394,14 @@ if __name__ == "__main__":
     print("finished loading documents, count=", len(documents))
 
     indexed_documents: list[IndexedDocument] = [build_indexed_document(document) for document in documents]
-    
+
     from collections import defaultdict
+
     indexed_documents_by_id: dict[str, list[IndexedDocument]] = defaultdict(list)
     for record in indexed_documents:
         if record.offer_id:
             indexed_documents_by_id[record.offer_id].append(record)
-            
+
     indexed_documents_by_filepath: dict[str, list[IndexedDocument]] = defaultdict(list)
     for record in indexed_documents:
         if record.filepath:
