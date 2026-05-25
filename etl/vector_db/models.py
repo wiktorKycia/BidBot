@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
+from pydantic import BaseModel, Field
 
 
 class LoadDataStrategy(Enum):
@@ -18,12 +19,11 @@ class DocumentMetadata:
     title: str
 
 
-@dataclass(frozen=True)
-class RetrievalPlan:
-    needs_search: bool
-    search_query: str
-    offer_ids: tuple[str, ...]
-    top_k: int
+class RetrievalPlan(BaseModel):
+    needs_search: bool = Field(description="Whether retrieval is needed")
+    search_query: str = Field(description="A focused search query")
+    offer_ids: list[str] = Field(description="Any offer IDs")
+    top_k: int = Field(description="The desired top_k documents")
 
 
 @dataclass(frozen=True)

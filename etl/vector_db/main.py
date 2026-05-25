@@ -29,12 +29,6 @@ MAX_CHROMA_BATCH = 5461
 TRANSACTION_ID_PATTERN = re.compile(r"\b(?:\d{6,}|[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12})\b")
 
 
-class LLMReturnedFaultyDataFormatError(Exception):
-    """Raised when the llm returns unexpected data format"""
-
-    pass
-
-
 def to_json_log(payload: Any) -> str:
     return json.dumps(payload, ensure_ascii=False, default=str, indent=2)
 
@@ -127,41 +121,31 @@ def plan_search(question: str, conversation_history: list[dict[str, str]]) -> Re
             ),
         ]
     )
-    planner = ChatOpenAI(model=MODEL, temperature=0, max_retries=3, model_kwargs={"response_format": {"type": "json_object"}})
+    planner = ChatOpenAI(model=MODEL, temperature=0, max_retries=3).with_structured_output(SearchPlanOutput)
 
     try:
-        response = planner.invoke(planning_prompt.format_messages(history=history_text, question=question)).content.strip()
-        payload = json.loads(response)
-    except (AttributeError, json.JSONDecodeError, TypeError) as e:
-        logger.exception(f"Wrong response type from planner: {e}")
-        raise
+        payload = planner.invoke(planning_prompt.format_messages(history=history_text, question=question))
     except KeyError as e:
         logger.exception(f"The prompt formatting failed due to missing `history` or `question` variables: {e}")
         raise
+    except Exception as e:
+        logger.exception(f"Error from planner: {e}")
+        raise
 
-    logger.debug(f"retrieval_plan_raw_output={to_json_log(payload)}")
-    if (
-        not isinstance(payload, dict)
-        or "offer_ids" not in payload
-        or "search_query" not in payload
-        or "needs_search" not in payload
-        or "top_k" not in payload
-    ):
-        logger.exception("The planner llm did not return the correct data format!")
-        raise LLMReturnedFaultyDataFormatError("The planner llm did not return the correct data format!")
+    logger.debug(f"retrieval_plan_raw_output={payload}")
 
     # if a offer id is present, match it directly against the indexed documents
     detected_ids = extract_offer_ids_from_text(question, format_history(conversation_history, 2))
-    planned_ids = payload.get("offer_ids", [])
+    planned_ids = payload.offer_ids
     planned_ids = [str(item) for item in planned_ids if str(item).strip()]
 
     offer_ids = unique_strings(list(detected_ids) + planned_ids)
-    search_query = str(payload.get("search_query", "")).strip()
+    search_query = str(payload.search_query).strip()
     if not search_query:
         search_query = question.strip()
 
-    needs_search = bool(payload.get("needs_search", True))
-    top_k = payload.get("top_k", 3)
+    needs_search = bool(payload.needs_search)
+    top_k = payload.top_k
     if not isinstance(top_k, int) or top_k < 0:
         top_k = 3
     top_k = min(top_k, MAX_CONTEXT_DOCS)
