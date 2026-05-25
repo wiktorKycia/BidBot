@@ -334,6 +334,8 @@ def _extract_zip_sync(filepath: Path, extract_to: Path) -> str:
     except Exception as e:
         logger.error(f"Nieoczekiwany błąd podczas rozpakowywania {filepath.name}: {e}")
         return f"error: {str(e)}"
+    finally:
+        filepath.unlink(missing_ok=True)
 
 
 async def check_page_exists(session: aiohttp.ClientSession, page: int) -> bool:
