@@ -323,8 +323,24 @@ def _extract_zip_sync(filepath: Path, extract_to: Path) -> str:
             return "corrupted_archive"
 
         extract_to.mkdir(parents=True, exist_ok=True)
+        base_dir = extract_to.resolve()
         with zipfile.ZipFile(filepath, "r") as zip_ref:
-            zip_ref.extractall(extract_to)
+            for member in zip_ref.infolist():
+                member_path = Path(member.filename.replace("\\", "/"))
+                if member_path.is_absolute():
+                    raise ValueError(f"Niebezpieczna ścieżka w archiwum ZIP: {member.filename}")
+
+                destination = (base_dir / member_path).resolve()
+                if destination != base_dir and base_dir not in destination.parents:
+                    raise ValueError(f"Niebezpieczna ścieżka w archiwum ZIP: {member.filename}")
+
+                if member.is_dir():
+                    destination.mkdir(parents=True, exist_ok=True)
+                    continue
+
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                with zip_ref.open(member, "r") as source, destination.open("wb") as target:
+                    target.write(source.read())
 
         logger.info(f"Pomyślnie rozpakowano archiwum: {filepath.name} -> {extract_to.name}/")
         return "success"
