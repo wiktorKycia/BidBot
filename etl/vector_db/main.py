@@ -4,7 +4,8 @@ import re
 from operator import itemgetter
 from pathlib import Path
 from typing import Any
-
+import asyncio
+from collections import defaultdict
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate, SystemMessagePromptTemplate
@@ -12,9 +13,11 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 from etl.llms import MODEL, require_openai_api_key
 from etl.loggers import setup_logging
-from etl.vector_db.models import IndexedDocument, RetrievalPlan, LoadDataStrategy
+from etl.utils import read_json
+from etl.vector_db.models import IndexedDocument, RetrievalPlan, LoadDataStrategy, OfferSummary
 from etl.vector_db.prompts import main_system_message_template, use_search_system_message_template
 from etl.vector_db.vector_saver import load_data
+from etl.scrapers.settings import BASE_DIR
 
 OPENAI_API_KEY = require_openai_api_key()
 
@@ -23,6 +26,13 @@ MODEL_EMBEDDINGS = "text-embedding-3-small"
 FRESH_DATA_RELOAD = True  # if set to True, the data will be first deleted, then loaded, for testing purposes
 
 CHROMA_DB_PATH = Path("chroma_langchain_db")
+TAGS_PATH = BASE_DIR / "etl" / "ketword_tagger" / "tags.json"
+
+try:
+    _tags_data = asyncio.run(read_json(TAGS_PATH))
+    TAGS_STR = ", ".join(_tags_data.get("tags", [])) if isinstance(_tags_data, dict) else ""
+except Exception:
+    TAGS_STR = ""
 
 MAX_CONTEXT_DOCS = 5
 MAX_CHROMA_BATCH = 5461
@@ -73,21 +83,44 @@ def build_indexed_document(document: Document) -> IndexedDocument:
     filepath = document.metadata.get("source", "document not downloaded")
     title = document.metadata.get("title", "unknown")
     offer_id = document.metadata.get("offer_id", "unknown")
+    source_type = document.metadata.get("source_type", "unknown")
 
-    return IndexedDocument(document=document, source_url=source, filepath=filepath, title=title, offer_id=offer_id, raw_text=raw_text)
+    return IndexedDocument(document=document, source_url=source, filepath=filepath, title=title, offer_id=offer_id, raw_text=raw_text, source_type=source_type)
 
 
-def format_indexed_document(record: IndexedDocument) -> str:
+def format_indexed_document(record: IndexedDocument, detailed: bool = False) -> str:
     """converts one IndexedDocument into readable text for the prompt"""
-    lines = [
-        f"Title: {record.title}",
-        f"Source: {record.source_url}",
-    ]
-    if record.offer_id:
-        lines.append(f"Transaction ID: {record.offer_id}")
-    lines.append("Content:")
-    lines.append(record.raw_text)
-    return "\n".join(lines)
+    if detailed:
+        lines = [
+            f"Title: {record.title}",
+            f"Source: {record.source_url}",
+        ]
+        if record.offer_id:
+            lines.append(f"Transaction ID: {record.offer_id}")
+        lines.append("Content:")
+        lines.append(record.raw_text)
+        return "\n".join(lines)
+
+    tags = []
+    desc = ""
+    if record.source_type == "json":
+        try:
+            payload = json.loads(record.raw_text)
+            enrichment = payload.get("enrichment", {})
+            if isinstance(enrichment, dict):
+                tags = enrichment.get("tags", [])
+            desc = str(payload.get("description", ""))[:500] + "..."
+        except Exception:
+            pass
+
+    summary = OfferSummary(
+        offer_id=record.offer_id,
+        title=record.title,
+        source_url=record.source_url,
+        tags=tags,
+        short_description=desc,
+    )
+    return summary.model_dump_json(indent=2)
 
 
 def format_history(conversation_history: list[dict[str, str]], max_turns: int = 6) -> str:
@@ -114,7 +147,7 @@ def plan_search(question: str, conversation_history: list[dict[str, str]]) -> Re
     history_text = format_history(conversation_history)
     planning_prompt = ChatPromptTemplate.from_messages(
         [
-            SystemMessagePromptTemplate.from_template(use_search_system_message_template, partial_variables={"tags": "your_tags_value"}),
+            SystemMessagePromptTemplate.from_template(use_search_system_message_template, partial_variables={"tags": TAGS_STR}),
             (
                 "human",
                 "Conversation history:\n{history}\n\nCurrent question:\n{question}",
@@ -168,7 +201,7 @@ def plan_search(question: str, conversation_history: list[dict[str, str]]) -> Re
     return RetrievalPlan(needs_search=needs_search, search_query=search_query, offer_ids=tuple(offer_ids), top_k=top_k)
 
 
-def exact_offer_lookup(offer_ids: tuple[str, ...]) -> list[IndexedDocument]:
+def exact_offer_lookup(offer_ids: list[str]) -> list[IndexedDocument]:
     if not offer_ids:
         logger.debug("exact_offer_lookup skipped: no offer ids provided")
         return []
@@ -197,11 +230,12 @@ def exact_offer_lookup(offer_ids: tuple[str, ...]) -> list[IndexedDocument]:
     return matched_documents
 
 
-def semantic_lookup(search_query: str, limit: int) -> list[IndexedDocument]:
-    if not search_query.strip() or limit <= 0:
+def semantic_lookup(plan: RetrievalPlan) -> list[IndexedDocument]:
+    search_query = plan.search_query.strip()
+    if not search_query or plan.top_k <= 0:
         logger.debug(
             "semantic_lookup skipped=%s",
-            to_json_log({"search_query": search_query, "limit": limit}),
+            to_json_log({"search_query": search_query, "limit": plan.top_k}),
         )
         return []
 
@@ -210,15 +244,35 @@ def semantic_lookup(search_query: str, limit: int) -> list[IndexedDocument]:
         to_json_log(
             {
                 "search_query": search_query,
-                "limit": limit,
+                "limit": plan.top_k,
             }
         ),
     )
 
+    where_filter = {}
+    if not plan.offer_ids:
+        where_filter["source_type"] = "json"
+
+    if plan.excluded_offer_ids:
+        if len(plan.excluded_offer_ids) == 1:
+            where_filter["offer_id"] = {"$ne": plan.excluded_offer_ids[0]}
+        else:
+            where_filter["offer_id"] = {"$nin": list(plan.excluded_offer_ids)}
+
+    chroma_filter = None
+    if len(where_filter) > 1:
+        chroma_filter = {"$and": [{k: v} for k, v in where_filter.items()]}
+    elif len(where_filter) == 1:
+        chroma_filter = where_filter
+
     try:
+        kwargs: dict[str, Any] = {"k": plan.top_k}
+        if chroma_filter:
+            kwargs["filter"] = chroma_filter
+
         results = vector_store.similarity_search_with_relevance_scores(
             search_query,
-            k=limit,
+            **kwargs
         )
     except Exception as e:
         logger.exception(f"semantic lookup failed: {e}")
@@ -240,7 +294,7 @@ def semantic_lookup(search_query: str, limit: int) -> list[IndexedDocument]:
         ),
     )
 
-    semantic_matches: list[IndexedDocument] = [build_indexed_document(document) for document, _ in results[:limit]]
+    semantic_matches: list[IndexedDocument] = [build_indexed_document(document) for document, _ in results[:plan.top_k]]
 
     logger.debug(
         "semantic_lookup_selected=%s",
@@ -250,21 +304,22 @@ def semantic_lookup(search_query: str, limit: int) -> list[IndexedDocument]:
     return semantic_matches
 
 
-def hybrid_retrieve(question: str, conversation_history: list[dict[str, str]]) -> tuple[RetrievalPlan, list[IndexedDocument]]:
+def hybrid_retrieve(question: str, conversation_history: list[dict[str, str]]) -> tuple[RetrievalPlan, list[IndexedDocument], bool]:
     plan = plan_search(question, conversation_history)
+    detailed = len(plan.offer_ids) > 0
     exact_matches = exact_offer_lookup(plan.offer_ids)
 
     if not plan.needs_search and not exact_matches:
         logger.debug("hybrid_retrieve returning early with no search and no exact matches")
-        return plan, []
+        return plan, [], detailed
 
-    semantic_matches = semantic_lookup(plan.search_query, plan.top_k)
+    semantic_matches = semantic_lookup(plan)
 
     combined: list[IndexedDocument] = []
     seen_texts: set[str] = set()
 
     for record in exact_matches:
-        if len(combined) >= max(plan.top_k, 5):
+        if len(combined) >= plan.top_k:
             break
         if record.raw_text not in seen_texts:
             seen_texts.add(record.raw_text)
@@ -290,18 +345,21 @@ def hybrid_retrieve(question: str, conversation_history: list[dict[str, str]]) -
         ),
     )
 
-    return plan, combined
+    return plan, combined, detailed
 
 
 def ask(question: str, conversation_history: list[dict[str, str]]) -> str:
     logger.info(f"received question={question}")
     logger.debug(f"current conversation_history={to_json_log(conversation_history)}")
-    plan, retrieved_documents = hybrid_retrieve(question, conversation_history)
+    plan, retrieved_documents, detailed = hybrid_retrieve(question, conversation_history)
+
+    if plan.warning:
+        return "Przepraszam, ale to wykracza poza moje instrukcje. Mogę za to opowiedzieć Ci o najnowszych ofertach publicznych!"
 
     if not retrieved_documents:
         context = "No relevant evidence was retrieved from the document store."
     else:
-        context = "\n\n---\n\n".join(format_indexed_document(record) for record in retrieved_documents)
+        context = "\n\n---\n\n".join(format_indexed_document(record, detailed=detailed) for record in retrieved_documents)
 
     logger.debug(
         "final_prompt_context=%s",
@@ -312,6 +370,7 @@ def ask(question: str, conversation_history: list[dict[str, str]]) -> str:
                     "needs_search": plan.needs_search,
                     "search_query": plan.search_query,
                     "offer_ids": list(plan.offer_ids),
+                    "excluded_offer_ids": list(plan.excluded_offer_ids),
                     "top_k": plan.top_k,
                 },
                 "retrieved_documents": [document_log_payload(record) for record in retrieved_documents],
@@ -372,14 +431,12 @@ if __name__ == "__main__":
     llm = ChatOpenAI(model=MODEL)
     embeddings = OpenAIEmbeddings(model=MODEL_EMBEDDINGS)
 
-    vector_store = Chroma(collection_name="bid_info_json", embedding_function=embeddings, persist_directory=str(CHROMA_DB_PATH))
+    vector_store = Chroma(collection_name="bid_info", embedding_function=embeddings, persist_directory=str(CHROMA_DB_PATH))
 
-    documents = load_data(vector_store, LoadDataStrategy.OldDataOnly)
+    documents = load_data(vector_store, LoadDataStrategy.AddNew)
     print("finished loading documents, count=", len(documents))
 
     indexed_documents: list[IndexedDocument] = [build_indexed_document(document) for document in documents]
-
-    from collections import defaultdict
 
     indexed_documents_by_id: dict[str, list[IndexedDocument]] = defaultdict(list)
     for record in indexed_documents:

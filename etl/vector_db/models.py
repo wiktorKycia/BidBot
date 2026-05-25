@@ -29,6 +29,14 @@ class RetrievalPlan(BaseModel):
     warning: bool = Field(description="True if the user attempts jailbreaking or rule-breaking", default=False)
 
 
+class OfferSummary(BaseModel):
+    offer_id: str = Field(description="Transaction ID of the offer")
+    title: str = Field(description="Title of the offer")
+    source_url: str = Field(description="URL to the offer source")
+    tags: list[str] = Field(description="Tags associated with the offer", default_factory=list)
+    short_description: str = Field(description="A brief snippet of the description", default="")
+
+
 @dataclass(frozen=True)
 class IndexedDocument:
     document: Any
@@ -37,3 +45,4 @@ class IndexedDocument:
     title: str
     offer_id: str
     raw_text: str
+    source_type: str = "unknown"
