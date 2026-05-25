@@ -1,8 +1,9 @@
+import asyncio
 import logging
 from collections import defaultdict
+from contextlib import asynccontextmanager
 from pathlib import Path
 
-from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from langchain_chroma import Chroma
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
@@ -45,11 +46,12 @@ ragemain.logger = logging.getLogger("vector_db")
 ragemain.vector_store = vector_store
 ragemain.llm = ChatOpenAI(model=MODEL)
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global app_ready
     try:
-        documents = load_data(vector_store, LoadDataStrategy.OldDataOnly)
+        documents = await asyncio.to_thread(load_data, vector_store, LoadDataStrategy.OldDataOnly)
         indexed_documents = [build_indexed_document(doc) for doc in documents]
 
         indexed_documents_by_id = defaultdict(list)
@@ -70,6 +72,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="BidBot Chat API", lifespan=lifespan)
+
+
 @app.post("/chat", response_model=ChatResponse)
 def chat_with_bot(request: ChatRequest):
     try:
@@ -77,7 +81,8 @@ def chat_with_bot(request: ChatRequest):
         return ChatResponse(answer=bot_answer)
     except Exception as e:
         ragemain.logger.exception(f"Krytyczny błąd podczas wywołania czatu: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
 
 @app.get("/health")
 def health():
