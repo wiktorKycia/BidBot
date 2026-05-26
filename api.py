@@ -28,8 +28,6 @@ class ChatResponse(BaseModel):
 
 app_ready = False
 
-OPENAI_API_KEY = require_openai_api_key()
-
 BASE_DIR = Path(__file__).resolve().parent
 CHROMA_DB_PATH = BASE_DIR / "etl" / "vector_db" / "chroma_langchain_db"
 
