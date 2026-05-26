@@ -280,20 +280,18 @@ def hybrid_retrieve(question: str, conversation_history: list[dict[str, str]]) -
     seen_texts: set[str] = set()
 
     for record in exact_matches:
-        if len(combined) >= max(plan.top_k, 5):
+        if len(combined) >= plan.top_k:
             break
         if record.raw_text not in seen_texts:
             seen_texts.add(record.raw_text)
             combined.append(record)
 
-    added_semantic = 0
     for record in semantic_matches:
-        if added_semantic >= plan.top_k:
+        if len(combined) >= plan.top_k:
             break
         if record.raw_text not in seen_texts:
             seen_texts.add(record.raw_text)
             combined.append(record)
-            added_semantic += 1
 
     logger.debug(
         "hybrid_retrieve_final=%s",
