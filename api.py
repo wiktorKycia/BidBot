@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from collections import defaultdict
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -49,7 +50,13 @@ ragemain.llm = ChatOpenAI(model=MODEL)
 async def lifespan(app: FastAPI):
     global app_ready
     try:
-        documents = await asyncio.to_thread(load_data, vector_store, LoadDataStrategy.OldDataOnly)
+        strategy_name = os.getenv("LOAD_DATA_STRATEGY", "OldDataOnly")
+        try:
+            strategy = LoadDataStrategy[strategy_name]
+        except KeyError:
+            strategy = LoadDataStrategy.OldDataOnly
+
+        documents = await asyncio.to_thread(load_data, vector_store, strategy)
         indexed_documents = [build_indexed_document(doc) for doc in documents]
 
         indexed_documents_by_id = defaultdict(list)
