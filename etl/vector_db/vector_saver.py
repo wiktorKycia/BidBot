@@ -167,9 +167,9 @@ def load_data(vector_store: Chroma, load_data_strategy: LoadDataStrategy = LoadD
             new_docs = extend_and_save_documents(vector_store, documents)
 
             # Append existing old documents so the total list returned contains both
+            documents = list(new_docs)
             for doc, meta in zip(existing_documents, existing_metadatas, strict=True):
                 documents.append(Document(page_content=doc, metadata=meta))
-            documents = new_docs
 
         case LoadDataStrategy.OldDataOnly:
             logger.info(f"loading documents from vector store count={len(existing_ids)}")
