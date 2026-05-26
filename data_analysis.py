@@ -342,7 +342,9 @@ def plot_all(stats: dict):
     ax_tbl.set_title("Spójność ID ↔ nazwa pliku JSON", fontsize=13,
                      fontweight="bold", pad=10)
 
-    out_path = BASE_DIR / "tender_analysis.png"
+    out_dir = BASE_DIR / "analysis_output"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / "tender_analysis.png"
     plt.savefig(out_path, dpi=150, bbox_inches="tight", facecolor=BG)
     print(f"\n✅  Wykres zapisano: {out_path}")
     plt.show()
