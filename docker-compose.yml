@@ -10,7 +10,7 @@ services:
     environment:
       - LOAD_DATA_STRATEGY=OldDataOnly
     volumes:
-      - ./etl/vector_db/chroma_langchain_db:/app/etl/vector_db/chroma_langchain_db
+      - ./etl/vector_db/chroma_langchain_db_:/app/etl/vector_db/chroma_langchain_db_
       - ./data:/app/data
     develop:
       watch:

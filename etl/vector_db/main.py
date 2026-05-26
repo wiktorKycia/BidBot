@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 import asyncio
 from collections import defaultdict
+from datetime import datetime
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate, SystemMessagePromptTemplate
@@ -18,13 +19,13 @@ from etl.utils import read_json
 from etl.vector_db.models import IndexedDocument, RetrievalPlan, LoadDataStrategy, OfferSummary
 from etl.vector_db.prompts import main_system_message_template, use_search_system_message_template
 from etl.vector_db.vector_saver import load_data
-from etl.scrapers.settings import BASE_DIR
+from etl.scrapers.settings import BASE_DIR, PARSED_DIR
 
 OPENAI_API_KEY = require_openai_api_key()
 
 MODEL_EMBEDDINGS = "text-embedding-3-small"
 
-CHROMA_DB_PATH = Path("chroma_langchain_db")
+CHROMA_DB_PATH = Path("chroma_langchain_db_")
 TAGS_PATH = BASE_DIR / "etl" / "ketword_tagger" / "tags.json"
 
 try:
@@ -345,52 +346,146 @@ def hybrid_retrieve(question: str, conversation_history: list[dict[str, str]]) -
     return plan, combined, detailed
 
 
+def _load_offer_payload(offer_id: str) -> dict[str, Any]:
+    if not offer_id:
+        return {}
+    if not PARSED_DIR.exists():
+        return {}
+
+    for json_file in PARSED_DIR.rglob("*.json"):
+        if offer_id in json_file.name:
+            try:
+                with open(json_file, encoding="utf-8") as f:
+                    payload = json.load(f)
+                return payload if isinstance(payload, dict) else {}
+            except Exception:
+                return {}
+    return {}
+
+
+def _format_deadline(raw_deadline: str) -> str:
+    if not raw_deadline or raw_deadline == "Brak danych":
+        return "Brak danych"
+    try:
+        dt = datetime.fromisoformat(raw_deadline)
+        return dt.strftime("%d.%m.%Y, godz. %H:%M")
+    except ValueError:
+        return raw_deadline
+
+
 def ask(question: str, conversation_history: list[dict[str, str]]) -> str:
     logger.info(f"received question={question}")
     logger.debug(f"current conversation_history={to_json_log(conversation_history)}")
-    plan, retrieved_documents, detailed = hybrid_retrieve(question, conversation_history)
 
-    if plan.warning:
-        return "Przepraszam, ale to wykracza poza moje instrukcje. Mogę za to opowiedzieć Ci o najnowszych ofertach publicznych!"
+    history_text = format_history(conversation_history)
+    search_query = question.strip() or "przetarg"
+    try:
+        raw_docs = vector_store.similarity_search_with_score(search_query, k=50)
+    except Exception as e:
+        logger.exception(f"search failed: {e}")
+        return "Wystąpił błąd podczas wyszukiwania. Spróbuj ponownie później."
 
-    if not retrieved_documents:
-        context = "No relevant evidence was retrieved from the document store."
-    else:
-        context = "\n\n---\n\n".join(format_indexed_document(record, detailed=detailed) for record in retrieved_documents)
+    offers: dict[str, dict[str, Any]] = {}
+    for doc, score in raw_docs:
+        offer_id = doc.metadata.get("offer_id", "")
+        if not offer_id:
+            continue
 
-    logger.debug(
-        "final_prompt_context=%s",
-        to_json_log(
+        record = offers.setdefault(
+            offer_id,
             {
-                "question": question,
-                "plan": {
-                    "needs_search": plan.needs_search,
-                    "search_query": plan.search_query,
-                    "offer_ids": list(plan.offer_ids),
-                    "excluded_offer_ids": list(plan.excluded_offer_ids),
-                    "top_k": plan.top_k,
-                },
-                "retrieved_documents": [document_log_payload(record) for record in retrieved_documents],
-                "context": context,
-            }
-        ),
-    )
+                "score": float(score),
+                "title": doc.metadata.get("title", "Brak tytułu"),
+                "text_chunks": [],
+                "attachment_chunks": [],
+            },
+        )
+        record["score"] = min(record["score"], float(score))
 
-    answer_prompt = ChatPromptTemplate.from_messages(
+        if doc.metadata.get("source_type") == "attachment":
+            record["attachment_chunks"].append(doc.page_content.strip())
+        else:
+            record["text_chunks"].append(doc.page_content.strip())
+
+    if not offers:
+        return "Brak dopasowanych ofert w bazie."
+
+    results: list[dict[str, Any]] = []
+    for offer_id, data in offers.items():
+        payload = _load_offer_payload(offer_id)
+
+        title = payload.get("title", data["title"])
+        source_url = payload.get("scraper_url", "Brak linku")
+
+        issuers = payload.get("issuers", []) if isinstance(payload, dict) else []
+        buyer = issuers[0].get("title", "Brak danych") if issuers else "Brak danych"
+
+        raw_deadline = payload.get("submittingOffersDeadline", "Brak danych") if isinstance(payload, dict) else "Brak danych"
+        deadline = _format_deadline(raw_deadline)
+
+        desc_text = payload.get("description", "") if isinstance(payload, dict) else ""
+        tags = payload.get("enrichment", {}).get("tags", []) if isinstance(payload, dict) else []
+        if tags:
+            desc_text += f"\nTagi: {', '.join(tags)}"
+
+        description = desc_text.strip() if desc_text.strip() else "Brak opisu"
+
+        full_data_str = json.dumps(payload, ensure_ascii=False, indent=2) if payload else ""
+        raw_text_combined = "\n\n--- FRAGMENT Z BAZY WEKTOROWEJ ---\n\n".join(data["text_chunks"][:6])
+        attachment_preview = "\n\n--- FRAGMENT Z ZAŁĄCZNIKÓW ---\n\n".join(data["attachment_chunks"][:6])
+
+        results.append(
+            {
+                "offer_id": offer_id,
+                "title": title,
+                "score": data["score"],
+                "source_url": source_url,
+                "deadline": deadline,
+                "buyer": buyer,
+                "description": description,
+                "full_data": full_data_str,
+                "raw_text_preview": raw_text_combined,
+                "attachments_preview": attachment_preview,
+            }
+        )
+
+    summarizer = ChatOpenAI(model=MODEL, temperature=0, max_retries=3)
+    summary_prompt = ChatPromptTemplate.from_messages(
         [
-            SystemMessagePromptTemplate.from_template(main_system_message_template),
+            SystemMessagePromptTemplate.from_template(
+                """You are an expert assistant for analyzing public procurement tenders.
+You have access to a list of tender data objects matching the following schema:
+- offer_id (str): Unique identifier of the tender
+- title (str): Title of the tender
+- score (float): Search relevance score
+- source_url (str): URL to the original tender
+- deadline (str): Deadline for submitting offers
+- buyer (str): The entity that published the tender
+- description (str): Extracted description and tags
+- full_data (str): Raw JSON string of the complete tender data
+- raw_text_preview (str): Text chunks extracted from the tender documents
+- attachments_preview (str): Text chunks extracted from the attachments
+
+Use the conversation history to maintain continuity (follow-ups, references, tone).
+Your goal is to summarize all the provided tender data and present it in a clear, user-friendly Markdown format.
+Focus on the most important aspects: buyer, deadline, and a concise summary of the requirements. Group related tenders if possible, and structure the response so the user can easily evaluate the opportunities.
+"""
+            ),
             (
                 "human",
-                "Conversation history:\n{history}\n\nUser question:\n{question}",
+                "Conversation history:\n{history}\n\nUser question:\n{question}\n\nData to summarize: {summary}",
             ),
         ]
     )
 
-    history_text = format_history(conversation_history)
-    messages = answer_prompt.format_messages(history=history_text, question=question, context=context)
-    message = ""
-    for response in llm.stream(messages):
-        message += response.content
+    try:
+        message = summarizer.invoke(
+            summary_prompt.format_messages(history=history_text, question=question, summary=results)
+        ).content.strip()
+    except Exception as e:
+        logger.exception(f"summarization failed: {e}")
+        return "Wystąpił błąd podczas generowania podsumowania. Spróbuj ponownie później."
+
     logger.info(f"generated answer length={len(message)}")
     return message
 
