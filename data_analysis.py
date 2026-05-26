@@ -276,7 +276,7 @@ def plot_all(stats: dict):
         )
         size_labels, size_means = zip(*size_items)
         bars = ax_size.barh(
-            size_labels, [s / 1024 if s >= 1024 else s for s in size_means],
+            size_labels, size_means,# [s / 1024 if s >= 1024 else s for s in size_means],
             color=[PALETTE[i % len(PALETTE)] for i in range(len(size_labels))],
             edgecolor="white", linewidth=0.8
         )
