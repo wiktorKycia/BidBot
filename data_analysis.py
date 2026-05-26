@@ -105,6 +105,10 @@ def collect_stats(records: list[dict], attachments_dir: Path) -> dict:
         "all_att_sizes_kb": [],
         "zip_not_extracted": 0,
         "subfolder_count": 0,
+        # ── Nowe: pliki wewnątrz podfolderów (rozpakowane ZIPy) ─────────────────
+        "extracted_file_count": 0,
+        "extracted_ext_counter": Counter(),
+        "extracted_ext_sizes_kb": defaultdict(list),
     }
 
     for rec in records:
@@ -153,12 +157,41 @@ def collect_stats(records: list[dict], attachments_dir: Path) -> dict:
             if att.get("is_zip") and att.get("extracted_status") not in ("success",):
                 stats["zip_not_extracted"] += 1
 
-    # Podfoldery w katalogu attachmentów
+    # ── Podfoldery + rekurencyjne pliki w podfolderach ───────────────────────────
+    # Struktura na dysku:
+    #   attachments/<offer_id>/           <- offer_folder
+    #   attachments/<offer_id>/<zip_stem>/  <- sub_dir (rozpakowany ZIP)
+    #   attachments/<offer_id>/<zip_stem>/.../**  <- pliki rekurencyjnie
+    #
+    # Liczymy:
+    #   subfolder_count  – ile podfolderów istnieje łącznie (jeden ZIP = jeden folder)
+    #   extracted_*      – wszystkie pliki wewnątrz tych podfolderów, rekurencyjnie
+
     if attachments_dir.exists():
         for offer_folder in attachments_dir.iterdir():
-            if offer_folder.is_dir():
-                sub_dirs = [d for d in offer_folder.iterdir() if d.is_dir()]
-                stats["subfolder_count"] += len(sub_dirs)
+            if not offer_folder.is_dir():
+                continue
+
+            sub_dirs = [d for d in offer_folder.iterdir() if d.is_dir()]
+            stats["subfolder_count"] += len(sub_dirs)
+
+            for sub_dir in sub_dirs:
+                # rglob("*") zwraca wszystkie pliki i katalogi rekurencyjnie;
+                # filtrujemy tylko pliki (is_file()), więc zagnieżdżone katalogi
+                # są transparentne – liczymy wyłącznie liście drzewa.
+                for file_path in sub_dir.rglob("*"):
+                    if not file_path.is_file():
+                        continue
+
+                    stats["extracted_file_count"] += 1
+                    ext_label = get_ext(file_path.name)
+                    stats["extracted_ext_counter"][ext_label] += 1
+
+                    try:
+                        size_kb = file_path.stat().st_size / 1024
+                        stats["extracted_ext_sizes_kb"][ext_label].append(size_kb)
+                    except OSError:
+                        pass
 
     return stats
 
@@ -180,12 +213,12 @@ def plot_all(stats: dict):
     avg_atts = np.mean(att_counts) if att_counts else 0
     avg_size = np.mean(stats["all_att_sizes_kb"]) if stats["all_att_sizes_kb"] else 0
 
-    fig = plt.figure(figsize=(20, 24), facecolor=BG)
+    fig = plt.figure(figsize=(20, 30), facecolor=BG)
     fig.suptitle("Analiza zebranych przetargów", fontsize=22, fontweight="bold",
-                 color=TEXT, y=0.98)
+                 color=TEXT, y=0.99)
 
-    gs = GridSpec(4, 2, figure=fig, hspace=0.45, wspace=0.35,
-                  top=0.95, bottom=0.04, left=0.07, right=0.97)
+    gs = GridSpec(5, 2, figure=fig, hspace=0.45, wspace=0.35,
+                  top=0.97, bottom=0.03, left=0.07, right=0.97)
 
     # ── KPI cards (górny wiersz) ────────────────────────────────────────────────
     ax_kpi = fig.add_subplot(gs[0, :])
@@ -198,6 +231,7 @@ def plot_all(stats: dict):
         ("Śr. rozmiar załącznika", fmt_size(avg_size)),
         ("ZIPy nierozpakowane", f"{stats['zip_not_extracted']}"),
         ("Podfoldery (ZIP extract)", f"{stats['subfolder_count']}"),
+        ("Pliki w podfolderach", f"{stats['extracted_file_count']:,}"),
         ("Błędy ID ↔ plik", f"{len(stats['id_mismatches'])}"),
     ]
 
@@ -210,13 +244,13 @@ def plot_all(stats: dict):
                                clip_on=False)
         ax_kpi.add_patch(rect)
         ax_kpi.text(x + 1 / n / 2, 0.65, value,
-                    ha="center", va="center", fontsize=18, fontweight="bold",
+                    ha="center", va="center", fontsize=16, fontweight="bold",
                     color=PALETTE[i % len(PALETTE)], transform=ax_kpi.transAxes)
-        ax_kpi.text(x + 1 / n / 2, 0.25, label,
-                    ha="center", va="center", fontsize=9, color=SUBTEXT,
+        ax_kpi.text(x + 1 / n / 2, 0.22, label,
+                    ha="center", va="center", fontsize=8.5, color=SUBTEXT,
                     transform=ax_kpi.transAxes)
 
-    # ── Wykres kołowy: typy załączników ────────────────────────────────────────
+    # ── Wykres kołowy: typy załączników (pobrane bezpośrednio) ─────────────────
     ax_pie = fig.add_subplot(gs[1, 0])
     ext_labels = list(stats["ext_counter"].keys())
     ext_vals = list(stats["ext_counter"].values())
@@ -233,12 +267,35 @@ def plot_all(stats: dict):
         for at in autotexts:
             at.set_fontsize(8)
         ax_pie.legend(wedges, ext_labels, loc="center left",
-                      bbox_to_anchor=(1.0, 0.5), fontsize=9,
-                      frameon=False)
-    ax_pie.set_title("Typy załączników", fontsize=13, fontweight="bold", pad=12)
+                      bbox_to_anchor=(1.0, 0.5), fontsize=9, frameon=False)
+    ax_pie.set_title("Typy załączników (pobrane)", fontsize=13, fontweight="bold", pad=12)
+
+    # ── Wykres kołowy: typy plików z podfolderów (rozpakowane ZIPy) ────────────
+    ax_pie2 = fig.add_subplot(gs[1, 1])
+    ex_labels = list(stats["extracted_ext_counter"].keys())
+    ex_vals = list(stats["extracted_ext_counter"].values())
+
+    if ex_vals:
+        sorted_pairs2 = sorted(zip(ex_vals, ex_labels), reverse=True)
+        ex_vals, ex_labels = zip(*sorted_pairs2)
+        colors2 = [PALETTE[i % len(PALETTE)] for i in range(len(ex_labels))]
+        wedges2, _, autotexts2 = ax_pie2.pie(
+            ex_vals, labels=None, autopct="%1.1f%%", colors=colors2,
+            startangle=140, pctdistance=0.78,
+            wedgeprops={"edgecolor": "white", "linewidth": 1.5}
+        )
+        for at in autotexts2:
+            at.set_fontsize(8)
+        ax_pie2.legend(wedges2, ex_labels, loc="center left",
+                       bbox_to_anchor=(1.0, 0.5), fontsize=9, frameon=False)
+    else:
+        ax_pie2.text(0.5, 0.5, "Brak plików\nw podfolderach",
+                     ha="center", va="center", color=SUBTEXT, fontsize=11,
+                     transform=ax_pie2.transAxes)
+    ax_pie2.set_title("Typy plików w podfolderach (z ZIPów)", fontsize=13, fontweight="bold", pad=12)
 
     # ── Histogram: liczba załączników na ofertę ─────────────────────────────────
-    ax_hist = fig.add_subplot(gs[1, 1])
+    ax_hist = fig.add_subplot(gs[2, 0])
     if att_counts:
         max_count = max(att_counts)
         bins = range(0, max_count + 2)
@@ -253,7 +310,7 @@ def plot_all(stats: dict):
     ax_hist.xaxis.set_major_locator(mticker.MaxNLocator(integer=True))
 
     # ── Słupkowy: źródła ofert ──────────────────────────────────────────────────
-    ax_src = fig.add_subplot(gs[2, 0])
+    ax_src = fig.add_subplot(gs[2, 1])
     if stats["source_counter"]:
         src_items = stats["source_counter"].most_common()
         src_labels, src_vals = zip(*src_items)
@@ -267,8 +324,8 @@ def plot_all(stats: dict):
     ax_src.set_title("Źródła ofert", fontsize=13, fontweight="bold")
     ax_src.invert_yaxis()
 
-    # ── Słupkowy: średnia waga wg typu ──────────────────────────────────────────
-    ax_size = fig.add_subplot(gs[2, 1])
+    # ── Słupkowy: średnia waga wg typu (pobrane bezpośrednio) ──────────────────
+    ax_size = fig.add_subplot(gs[3, 0])
     if stats["ext_sizes_kb"]:
         size_items = sorted(
             ((ext, np.mean(sizes)) for ext, sizes in stats["ext_sizes_kb"].items()),
@@ -276,42 +333,45 @@ def plot_all(stats: dict):
         )
         size_labels, size_means = zip(*size_items)
         bars = ax_size.barh(
-            size_labels, size_means,# [s / 1024 if s >= 1024 else s for s in size_means],
+            size_labels, size_means,
             color=[PALETTE[i % len(PALETTE)] for i in range(len(size_labels))],
             edgecolor="white", linewidth=0.8
         )
         unit = "MB" if any(s >= 1024 for s in size_means) else "KB"
         for bar, val_kb in zip(bars, size_means):
-            label = fmt_size(val_kb)
             ax_size.text(bar.get_width() + 0.005, bar.get_y() + bar.get_height() / 2,
-                         label, va="center", fontsize=8.5, color=TEXT)
+                         fmt_size(val_kb), va="center", fontsize=8.5, color=TEXT)
         ax_size.set_xlabel(f"Średni rozmiar ({unit})")
-        ax_size.set_title("Średnia waga załącznika wg typu", fontsize=13, fontweight="bold")
+        ax_size.set_title("Śr. waga załącznika wg typu (pobrane)", fontsize=13, fontweight="bold")
         ax_size.invert_yaxis()
 
-    # ── Sumaryczny rozmiar wg typu ──────────────────────────────────────────────
-    ax_total = fig.add_subplot(gs[3, 0])
-    if stats["ext_sizes_kb"]:
-        total_items = sorted(
-            ((ext, sum(sizes)) for ext, sizes in stats["ext_sizes_kb"].items()),
+    # ── Słupkowy: średnia waga wg typu (z podfolderów) ─────────────────────────
+    ax_size2 = fig.add_subplot(gs[3, 1])
+    if stats["extracted_ext_sizes_kb"]:
+        size_items2 = sorted(
+            ((ext, np.mean(sizes)) for ext, sizes in stats["extracted_ext_sizes_kb"].items()),
             key=lambda x: x[1], reverse=True
         )
-        t_labels, t_vals_kb = zip(*total_items)
-        t_vals = [v / 1024 for v in t_vals_kb]
-        bars = ax_total.barh(
-            t_labels, t_vals,
-            color=[PALETTE[i % len(PALETTE)] for i in range(len(t_labels))],
+        size_labels2, size_means2 = zip(*size_items2)
+        bars2 = ax_size2.barh(
+            size_labels2, size_means2,
+            color=[PALETTE[i % len(PALETTE)] for i in range(len(size_labels2))],
             edgecolor="white", linewidth=0.8
         )
-        for bar, val_kb in zip(bars, t_vals_kb):
-            ax_total.text(bar.get_width() + 0.005, bar.get_y() + bar.get_height() / 2,
+        for bar, val_kb in zip(bars2, size_means2):
+            ax_size2.text(bar.get_width() + 0.005, bar.get_y() + bar.get_height() / 2,
                           fmt_size(val_kb), va="center", fontsize=8.5, color=TEXT)
-        ax_total.set_xlabel("Łączny rozmiar (MB)")
-        ax_total.set_title("Łączna waga załączników wg typu", fontsize=13, fontweight="bold")
-        ax_total.invert_yaxis()
+        unit2 = "MB" if any(s >= 1024 for s in size_means2) else "KB"
+        ax_size2.set_xlabel(f"Średni rozmiar ({unit2})")
+        ax_size2.set_title("Śr. waga pliku wg typu (z podfolderów)", fontsize=13, fontweight="bold")
+        ax_size2.invert_yaxis()
+    else:
+        ax_size2.text(0.5, 0.5, "Brak danych", ha="center", va="center",
+                      color=SUBTEXT, fontsize=11, transform=ax_size2.transAxes)
+        ax_size2.set_title("Śr. waga pliku wg typu (z podfolderów)", fontsize=13, fontweight="bold")
 
     # ── Tabela: błędy ID ↔ plik JSON ───────────────────────────────────────────
-    ax_tbl = fig.add_subplot(gs[3, 1])
+    ax_tbl = fig.add_subplot(gs[4, :])
     ax_tbl.axis("off")
 
     mismatches = stats["id_mismatches"]
@@ -376,12 +436,19 @@ def main():
     print(f"  Średnio załączników/oferta:   {np.mean(stats['att_counts']):.2f}" if stats["att_counts"] else "  Brak danych")
     print(f"  ZIPy nierozpakowane:          {stats['zip_not_extracted']:>6}")
     print(f"  Podfoldery (rozpakowane):     {stats['subfolder_count']:>6}")
+    print(f"  Pliki w podfolderach:         {stats['extracted_file_count']:>6}")
     print(f"  Niezgodności ID ↔ plik:       {len(stats['id_mismatches']):>6}")
-    print("\n  Typy załączników:")
+    print("\n  Typy załączników (pobrane bezpośrednio):")
     for ext, cnt in stats["ext_counter"].most_common():
         sizes = stats["ext_sizes_kb"].get(ext, [])
         avg = np.mean(sizes) if sizes else 0
         print(f"    {ext:<25} {cnt:>5} szt.  śr. {fmt_size(avg)}")
+    if stats["extracted_ext_counter"]:
+        print("\n  Typy plików w podfolderach (z ZIPów, rekurencyjnie):")
+        for ext, cnt in stats["extracted_ext_counter"].most_common():
+            sizes = stats["extracted_ext_sizes_kb"].get(ext, [])
+            avg = np.mean(sizes) if sizes else 0
+            print(f"    {ext:<25} {cnt:>5} szt.  śr. {fmt_size(avg)}")
     print("═" * 50 + "\n")
 
     plot_all(stats)
