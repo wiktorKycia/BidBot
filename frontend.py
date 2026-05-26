@@ -47,10 +47,9 @@ if user_input := st.chat_input("Zadaj pytanie o przetargi..."):
         except requests.exceptions.ConnectionError as e:
             logger.error(f"❌ Connection error to {API_URL}: {e}", exc_info=True)
             st.error("❌ Błąd połączenia z serwerem. Spróbuj ponownie później.")
-        except requests.exceptions.HTTPError as e:
+        except requests.exceptions.HTTPError:
             logger.error(f"❌ HTTP error from API [status={response.status_code}]: {response.text}", exc_info=True)
             st.error("❌ Wystąpił błąd serwera podczas przetwarzania żądania.")
         except Exception as e:
             logger.exception(f"❌ Unexpected error in frontend: {e}")
             st.error("❌ Wystąpił nieoczekiwany błąd. Spróbuj ponownie później.")
-
