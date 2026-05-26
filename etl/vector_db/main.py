@@ -20,8 +20,6 @@ OPENAI_API_KEY = require_openai_api_key()
 
 MODEL_EMBEDDINGS = "text-embedding-3-small"
 
-FRESH_DATA_RELOAD = True  # if set to True, the data will be first deleted, then loaded, for testing purposes
-
 CHROMA_DB_PATH = Path("chroma_langchain_db")
 
 MAX_CONTEXT_DOCS = 5
