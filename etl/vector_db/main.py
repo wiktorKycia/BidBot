@@ -1,29 +1,25 @@
 import json
 import logging
+import os
 import re
 from operator import itemgetter
 from pathlib import Path
 from typing import Any
 
-from chromadb import PersistentClient
 from langchain_chroma import Chroma
-from langchain_community.document_loaders import JSONLoader
-from langchain_community.document_loaders.directory import DirectoryLoader
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate, SystemMessagePromptTemplate
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 from etl.llms import MODEL, require_openai_api_key
 from etl.loggers import setup_logging
-from etl.scrapers.settings import PARSED_DIR
-from etl.vector_db.models import IndexedDocument, RetrievalPlan
+from etl.vector_db.models import IndexedDocument, LoadDataStrategy, RetrievalPlan
 from etl.vector_db.prompts import main_system_message_template, use_search_system_message_template
+from etl.vector_db.vector_saver import load_data
 
 OPENAI_API_KEY = require_openai_api_key()
 
 MODEL_EMBEDDINGS = "text-embedding-3-small"
-
-FRESH_DATA_RELOAD = False  # if set to True, the data will be first deleted, then loaded, for testing purposes
 
 CHROMA_DB_PATH = Path("chroma_langchain_db")
 
@@ -44,20 +40,21 @@ def to_json_log(payload: Any) -> str:
 
 def document_log_payload(record: Any) -> dict[str, Any]:
     return {
-        "source": record.source,
+        "filepath": record.filepath,
+        "source_url": record.source_url,
         "title": record.title,
-        "transaction_id": record.transaction_id,
+        "offer_id": record.offer_id,
         # "raw_text": record.raw_text,
     }
 
 
 def unique_strings(values: list[str]) -> list[str]:
-    """removes duplicates while preserving order. It is used to keep transaction IDs from repeating"""
+    """removes duplicates while preserving order. It is used to keep offer IDs from repeating"""
     return list(dict.fromkeys(values))
 
 
-def extract_transaction_ids_from_text(*values: str) -> tuple[str, ...]:
-    """scans one or more text blobs and returns all matching transaction IDs. It is used on the question, history, raw document text
+def extract_offer_ids_from_text(*values: str) -> tuple[str, ...]:
+    """scans one or more text blobs and returns all matching offer IDs. It is used on the question, history, raw document text
     and source metadata"""
     ids: list[str] = []
     for value in values:
@@ -68,27 +65,31 @@ def extract_transaction_ids_from_text(*values: str) -> tuple[str, ...]:
 def build_indexed_document(document: Document) -> IndexedDocument:
     """converts a LangChain document into the internal"""
 
-    # try to parse the page content as JSON
     raw_text = document.page_content.strip()
     try:
         payload = json.loads(raw_text)
+        if not isinstance(payload, dict):
+            payload = {}
     except json.JSONDecodeError:
         payload = {}
 
     # extract a source path from metadata
-    source = payload.get("scraper_url")
+    source = payload.get("scraper_url", "no url provided")
+    filepath = document.metadata.get("source", "document not downloaded")
+    title = document.metadata.get("title", "unknown")
+    offer_id = document.metadata.get("offer_id", "unknown")
 
-    return IndexedDocument(document=document, source=source, title=payload["title"], transaction_id=payload["id"], raw_text=raw_text)
+    return IndexedDocument(document=document, source_url=source, filepath=filepath, title=title, offer_id=offer_id, raw_text=raw_text)
 
 
 def format_indexed_document(record: IndexedDocument) -> str:
     """converts one IndexedDocument into readable text for the prompt"""
     lines = [
-        f"Source: {record.source}",
         f"Title: {record.title}",
+        f"Source: {record.source_url}",
     ]
-    if record.transaction_id:
-        lines.append(f"Transaction ID: {record.transaction_id}")
+    if record.offer_id:
+        lines.append(f"Offer ID: {record.offer_id}")
     lines.append("Content:")
     lines.append(record.raw_text)
     return "\n".join(lines)
@@ -112,7 +113,7 @@ def plan_search(question: str, conversation_history: list[dict[str, str]]) -> Re
 
     - whether retrieval is needed,
     - a focused search query,
-    - any transaction IDs,
+    - any offer IDs,
     - the desired top_k.
     """
     history_text = format_history(conversation_history)
@@ -140,7 +141,7 @@ def plan_search(question: str, conversation_history: list[dict[str, str]]) -> Re
     logger.debug(f"retrieval_plan_raw_output={to_json_log(payload)}")
     if (
         not isinstance(payload, dict)
-        or "transaction_ids" not in payload
+        or "offer_ids" not in payload
         or "search_query" not in payload
         or "needs_search" not in payload
         or "top_k" not in payload
@@ -148,12 +149,12 @@ def plan_search(question: str, conversation_history: list[dict[str, str]]) -> Re
         logger.exception("The planner llm did not return the correct data format!")
         raise LLMReturnedFaultyDataFormatError("The planner llm did not return the correct data format!")
 
-    # if a transaction id is present, match it directly against the indexed documents
-    detected_ids = extract_transaction_ids_from_text(question, format_history(conversation_history, 2))
-    planned_ids = payload.get("transaction_ids", [])
+    # if a offer id is present, match it directly against the indexed documents
+    detected_ids = extract_offer_ids_from_text(question, format_history(conversation_history, 2))
+    planned_ids = payload.get("offer_ids", [])
     planned_ids = [str(item) for item in planned_ids if str(item).strip()]
 
-    transaction_ids = unique_strings(list(detected_ids) + planned_ids)
+    offer_ids = unique_strings(list(detected_ids) + planned_ids)
     search_query = str(payload.get("search_query", "")).strip()
     if not search_query:
         search_query = question.strip()
@@ -164,7 +165,7 @@ def plan_search(question: str, conversation_history: list[dict[str, str]]) -> Re
         top_k = 3
     top_k = min(top_k, MAX_CONTEXT_DOCS)
 
-    if transaction_ids:
+    if offer_ids:
         needs_search = True
 
     logger.debug(
@@ -173,37 +174,38 @@ def plan_search(question: str, conversation_history: list[dict[str, str]]) -> Re
             {
                 "needs_search": needs_search,
                 "search_query": search_query,
-                "transaction_ids": list(transaction_ids),
+                "offer_ids": list(offer_ids),
                 "top_k": top_k,
             }
         ),
     )
 
-    return RetrievalPlan(needs_search=needs_search, search_query=search_query, transaction_ids=tuple(transaction_ids), top_k=top_k)
+    return RetrievalPlan(needs_search=needs_search, search_query=search_query, offer_ids=tuple(offer_ids), top_k=top_k)
 
 
-def exact_transaction_lookup(transaction_ids: tuple[str, ...]) -> list[IndexedDocument]:
-    if not transaction_ids:
-        logger.debug("exact_transaction_lookup skipped: no transaction ids provided")
+def exact_offer_lookup(offer_ids: tuple[str, ...]) -> list[IndexedDocument]:
+    if not offer_ids:
+        logger.debug("exact_offer_lookup skipped: no offer ids provided")
         return []
 
     matched_documents: list[IndexedDocument] = []
-    for transaction_id in transaction_ids:
-        logger.debug(f"exact_transaction_lookup searching for transaction_id={transaction_id}")
-        if transaction_id in indexed_documents_by_id:
-            record = indexed_documents_by_id[transaction_id]
-            matched_documents.append(record)
-            logger.debug(f"exact_transaction_lookup match={to_json_log(document_log_payload(record))}")
+    for offer_id in offer_ids:
+        logger.debug(f"exact_offer_lookup searching for offer_id={offer_id}")
+        if offer_id in indexed_documents_by_id:
+            records = indexed_documents_by_id[offer_id]
+            matched_documents.extend(records)
+            for record in records:
+                logger.debug(f"exact_offer_lookup match={to_json_log(document_log_payload(record))}")
         else:
-            logger.warning(f"Did not found the exact match for transaction ID: {transaction_id}")
+            logger.warning(f"Did not found the exact match for offer ID: {offer_id}")
 
     logger.debug(
-        "exact_transaction_lookup_result=%s",
+        "exact_offer_lookup_result=%s",
         to_json_log(
             {
-                "transaction_ids": list(transaction_ids),
+                "offer_ids": list(offer_ids),
                 "matched_count": len(matched_documents),
-                "matched_sources": [record.source for record in matched_documents],
+                "matched_sources": [record.source_url for record in matched_documents],
             }
         ),
     )
@@ -265,7 +267,7 @@ def semantic_lookup(search_query: str, limit: int) -> list[IndexedDocument]:
 
 def hybrid_retrieve(question: str, conversation_history: list[dict[str, str]]) -> tuple[RetrievalPlan, list[IndexedDocument]]:
     plan = plan_search(question, conversation_history)
-    exact_matches = exact_transaction_lookup(plan.transaction_ids)
+    exact_matches = exact_offer_lookup(plan.offer_ids)
 
     if not plan.needs_search and not exact_matches:
         logger.debug("hybrid_retrieve returning early with no search and no exact matches")
@@ -274,46 +276,34 @@ def hybrid_retrieve(question: str, conversation_history: list[dict[str, str]]) -
     semantic_matches = semantic_lookup(plan.search_query, plan.top_k)
 
     combined: list[IndexedDocument] = []
-    seen_sources: set[str] = set()
-    remaining = max(plan.top_k - len(exact_matches), 0)
-    for i, record in enumerate([*exact_matches, *semantic_matches]):
-        if record.source in seen_sources:
-            continue
-        seen_sources.add(record.source)
-        combined.append(record)
+    seen_texts: set[str] = set()
 
-        if i >= remaining:
+    for record in exact_matches:
+        if len(combined) >= plan.top_k:
             break
+        if record.raw_text not in seen_texts:
+            seen_texts.add(record.raw_text)
+            combined.append(record)
+
+    for record in semantic_matches:
+        if len(combined) >= plan.top_k:
+            break
+        if record.raw_text not in seen_texts:
+            seen_texts.add(record.raw_text)
+            combined.append(record)
 
     logger.debug(
         "hybrid_retrieve_final=%s",
         to_json_log(
             {
                 "question": question,
-                "combined_sources": [record.source for record in combined],
+                "combined_sources": [record.source_url for record in combined],
                 "combined_documents": [document_log_payload(record) for record in combined],
             }
         ),
     )
 
     return plan, combined
-
-
-def delete_collection(chroma_path: str, collection_name: str):
-    try:
-        chroma_client = PersistentClient(path=chroma_path)
-        chroma_client.delete_collection(collection_name)
-        logger.info(f"deleted collection={collection_name} from path={chroma_path}")
-        print(f"Collection {collection_name} deleted successfully.")
-    except Exception as e:
-        logger.exception(f"failed to delete collection={collection_name} from path={chroma_path}")
-        raise Exception(f"Unable to delete collection: {e}") from e
-
-
-def add_documents_to_vector_store(documents: list[Document], vector_store: Chroma):
-    for i in range(0, len(documents), MAX_CHROMA_BATCH):
-        batch = documents[i : i + MAX_CHROMA_BATCH]
-        vector_store.add_documents(batch)
 
 
 def ask(question: str, conversation_history: list[dict[str, str]]) -> str:
@@ -334,7 +324,7 @@ def ask(question: str, conversation_history: list[dict[str, str]]) -> str:
                 "plan": {
                     "needs_search": plan.needs_search,
                     "search_query": plan.search_query,
-                    "transaction_ids": list(plan.transaction_ids),
+                    "offer_ids": list(plan.offer_ids),
                     "top_k": plan.top_k,
                 },
                 "retrieved_documents": [document_log_payload(record) for record in retrieved_documents],
@@ -390,39 +380,35 @@ def main():
 
 if __name__ == "__main__":
     setup_logging()
-    logger = logging.getLogger("bidbot.vector_db")
+    logger = logging.getLogger("vector_db")
 
     llm = ChatOpenAI(model=MODEL)
-
     embeddings = OpenAIEmbeddings(model=MODEL_EMBEDDINGS)
 
-    vector_store = Chroma(collection_name="bid_info_json", embedding_function=embeddings, persist_directory=CHROMA_DB_PATH)
+    vector_store = Chroma(collection_name="bid_info_json", embedding_function=embeddings, persist_directory=str(CHROMA_DB_PATH))
 
-    existing_data = vector_store.get()
-    existing_ids = existing_data["ids"]
+    strategy_name = os.getenv("LOAD_DATA_STRATEGY", "OldDataOnly")
+    try:
+        strategy = LoadDataStrategy[strategy_name]
+    except KeyError:
+        strategy = LoadDataStrategy.OldDataOnly
 
-    documents = []
-
-    if FRESH_DATA_RELOAD or len(existing_ids) == 0:
-        loader = DirectoryLoader(str(PARSED_DIR), glob="**/*.json", loader_cls=JSONLoader, loader_kwargs={"jq_schema": ".", "text_content": False})  # type: ignore[arg-type]
-
-        documents = loader.load()
-        logger.info(f"loaded documents from parsed_json_path={PARSED_DIR} count={len(documents)}")
-
-        # clear collection before adding documents
-        if len(existing_ids) > 0:
-            logger.info(f"clearing existing vector store ids count={len(existing_ids)}")
-            vector_store.delete(existing_ids)
-
-        add_documents_to_vector_store(documents, vector_store)
-        logger.info(f"added documents to vector store count={len(documents)}")
-    else:
-        logger.info(f"loading documents from vector store count={len(existing_ids)}")
-        for doc, meta in zip(existing_data["documents"], existing_data["metadatas"], strict=True):
-            documents.append(Document(page_content=doc, metadata=meta))
+    documents = load_data(vector_store, strategy)
+    print("finished loading documents, count=", len(documents))
 
     indexed_documents: list[IndexedDocument] = [build_indexed_document(document) for document in documents]
-    indexed_documents_by_id: dict[str, IndexedDocument] = {record.transaction_id: record for record in indexed_documents}
+
+    from collections import defaultdict
+
+    indexed_documents_by_id: dict[str, list[IndexedDocument]] = defaultdict(list)
+    for record in indexed_documents:
+        if record.offer_id:
+            indexed_documents_by_id[record.offer_id].append(record)
+
+    indexed_documents_by_filepath: dict[str, list[IndexedDocument]] = defaultdict(list)
+    for record in indexed_documents:
+        if record.filepath:
+            indexed_documents_by_filepath[record.filepath].append(record)
     logger.info(f"built in-memory indexed_documents count={len(indexed_documents)}")
 
     main()

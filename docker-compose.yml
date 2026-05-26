@@ -1,0 +1,52 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - LOAD_DATA_STRATEGY=OldDataOnly
+    volumes:
+      - ./etl/vector_db/chroma_langchain_db:/app/etl/vector_db/chroma_langchain_db
+      - ./data:/app/data
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./api.py
+          target: /app/api.py
+        - action: sync+restart
+          path: ./etl
+          target: /app/etl
+          ignore:
+            - "vector_db/chroma_langchain_db"
+            - "vector_db/chroma_langchain_db/**"
+            - "**/*.sqlite3"
+            - "**/*.sqlite3-journal"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 6000s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    environment:
+      - BACKEND_URL=http://backend:8000
+    develop:
+      watch:
+        - action: sync
+          path: ./frontend.py
+          target: /app/frontend.py
+    depends_on:
+      backend:
+        condition: service_healthy
