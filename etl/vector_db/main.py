@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+from logging import DEBUG
 from operator import itemgetter
 from pathlib import Path
 from typing import Any
@@ -170,9 +171,13 @@ def plan_search(question: str, conversation_history: list[dict[str, str]]) -> Re
     planned_ids = payload.offer_ids
     planned_ids = [str(item) for item in planned_ids if str(item).strip()]
 
-    offer_ids = unique_strings(list(detected_ids) + planned_ids)
+    # intersect planner logic with extracted regex to limit hallucinations
+    detected_ids_set = set(detected_ids)
+    offer_ids = [pid for pid in planned_ids if pid in detected_ids_set]
+    offer_ids = unique_strings(offer_ids)
+    
     search_query = str(payload.search_query).strip()
-    if not search_query:
+    if not search_query and not offer_ids:
         search_query = question.strip()
 
     needs_search = bool(payload.needs_search)
@@ -317,8 +322,6 @@ def hybrid_retrieve(question: str, conversation_history: list[dict[str, str]]) -
     seen_texts: set[str] = set()
 
     for record in exact_matches:
-        if len(combined) >= plan.top_k:
-            break
         if record.raw_text not in seen_texts:
             seen_texts.add(record.raw_text)
             combined.append(record)
@@ -345,7 +348,7 @@ def hybrid_retrieve(question: str, conversation_history: list[dict[str, str]]) -
 
 
 def ask(question: str, conversation_history: list[dict[str, str]]) -> str:
-    logger.info(f"received question={question}")
+    logger.debug(f"received question={question}")
     logger.debug(f"current conversation_history={to_json_log(conversation_history)}")
     plan, retrieved_documents, detailed = hybrid_retrieve(question, conversation_history)
 
@@ -390,7 +393,8 @@ def ask(question: str, conversation_history: list[dict[str, str]]) -> str:
     message = ""
     for response in llm.stream(messages):
         message += response.content
-    logger.info(f"generated answer length={len(message)}")
+    logger.debug(f"generated answer length={len(message)}")
+    logger.debug(f"generated answer={message}")
     return message
 
 
