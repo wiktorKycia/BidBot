@@ -1,7 +1,10 @@
 import logging.config
 from pathlib import Path
 
-LOG_DIR = Path("logs")
+BASE_DIR = Path(__file__).resolve().parent.parent
+LOG_DIR = BASE_DIR / "logs"
+
+LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 LOGGING_CONFIG = {
     "version": 1,
@@ -11,44 +14,69 @@ LOGGING_CONFIG = {
             "format": "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
             "datefmt": "%Y-%m-%d %H:%M:%S",
         },
+        "console": {
+            "format": "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+            "datefmt": "%H:%M:%S",
+        },
+        "detailed": {
+            "format": "%(asctime)s [%(levelname)s] %(name)s:%(funcName)s:%(lineno)d - %(message)s",
+            "datefmt": "%Y-%m-%d %H:%M:%S",
+        },
     },
     "handlers": {
         "console": {
             "class": "logging.StreamHandler",
-            "formatter": "standard",
+            "formatter": "console",
             "level": "INFO",
             "stream": "ext://sys.stdout",
         },
-        "file": {
-            "class": "logging.FileHandler",
-            "filename": LOG_DIR / "scraper.log",
-            "formatter": "standard",
+        "file_app": {
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": LOG_DIR / "app.log",
+            "maxBytes": 5 * 1024 * 1024, # 5 MB
+            "backupCount": 3,
+            "formatter": "detailed",
             "level": "DEBUG",
             "encoding": "utf-8",
         },
-        "rotatingFile": {
+        "file_vector_db": {
             "class": "logging.handlers.RotatingFileHandler",
             "filename": LOG_DIR / "vector_db.log",
-            "maxBytes": 5000000,
-            "backupCount": 1,
-            "formatter": "standard",
+            "maxBytes": 5 * 1024 * 1024, # 5 MB
+            "backupCount": 3,
+            "formatter": "detailed",
+            "level": "DEBUG",
+            "encoding": "utf-8",
+        },
+        "file_scraper": {
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": LOG_DIR / "scraper.log",
+            "maxBytes": 5 * 1024 * 1024, # 5 MB
+            "backupCount": 3,
+            "formatter": "detailed",
             "level": "DEBUG",
             "encoding": "utf-8",
         },
     },
     "loggers": {
         "": {
-            "handlers": ["console", "file"],
+            "handlers": ["console", "file_app"],
             "level": "DEBUG",
             "propagate": True,
         },
-        "aiohttp": {"level": "WARNING"},
-        "httpx": {"level": "WARNING"},
         "vector_db": {
-            "handlers": ["rotatingFile", "console"],
+            "handlers": ["console", "file_vector_db"],
+            "level": "DEBUG",
+            "propagate": False,  # Prevents doubling up in app.log
+        },
+        "scraper": {  # Create an explicit scraper scope
+            "handlers": ["console", "file_scraper"],
             "level": "DEBUG",
             "propagate": False,
         },
+        "aiohttp": {"level": "WARNING"},
+        "httpx": {"level": "WARNING"},
+        "langchain": {"level": "WARNING"},
     },
 }
 
