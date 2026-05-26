@@ -60,14 +60,13 @@ async def extend_document(document: Document) -> list[Document]:
     logger.debug(f"json Metadata:  {document.metadata}")
     logger.debug(f"attachments count: {len(offer['scraper_attachments'])}")
 
-    attachments_list = offer["scraper_attachments"]
     attachment_documents: list[Document] = []
-    if attachments_list:
+    offer_attachments_dir = ATTACHMENTS_DIR / offer_id
+    if offer_attachments_dir.exists() and offer_attachments_dir.is_dir():
         convert_tasks = []
-        for attachment in attachments_list:
-            if attachment["downloaded"]:
-                full_path = ATTACHMENTS_DIR / offer_id / attachment["filename"]
-                convert_tasks.append(asyncio.to_thread(convert_file, full_path))
+        for path in offer_attachments_dir.rglob("*"):
+            if path.is_file():
+                convert_tasks.append(asyncio.to_thread(convert_file, path))
         if convert_tasks:
             results = await asyncio.gather(*convert_tasks, return_exceptions=True)
             for res in results:
