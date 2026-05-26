@@ -32,9 +32,9 @@ try:
 except Exception:
     TAGS_STR = ""
 
-MAX_CONTEXT_DOCS = 5
+MAX_CONTEXT_DOCS = 10
 MAX_CHROMA_BATCH = 5461
-TRANSACTION_ID_PATTERN = re.compile(r"\b(?:\d{6,}|[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12})\b")
+TRANSACTION_ID_PATTERN = re.compile(r"\b[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}\b")
 
 
 def to_json_log(payload: Any) -> str:
@@ -196,7 +196,7 @@ def plan_search(question: str, conversation_history: list[dict[str, str]]) -> Re
         ),
     )
 
-    return RetrievalPlan(needs_search=needs_search, search_query=search_query, offer_ids=tuple(offer_ids), top_k=top_k)
+    return RetrievalPlan(needs_search=needs_search, search_query=search_query, offer_ids=offer_ids, top_k=top_k)
 
 
 def exact_offer_lookup(offer_ids: list[str]) -> list[IndexedDocument]:
@@ -304,7 +304,7 @@ def semantic_lookup(plan: RetrievalPlan) -> list[IndexedDocument]:
 
 def hybrid_retrieve(question: str, conversation_history: list[dict[str, str]]) -> tuple[RetrievalPlan, list[IndexedDocument], bool]:
     plan = plan_search(question, conversation_history)
-    detailed = len(plan.offer_ids) > 0
+    detailed = len(plan.offer_ids) > 0 # czemu tak?
     exact_matches = exact_offer_lookup(plan.offer_ids)
 
     if not plan.needs_search and not exact_matches:
@@ -429,7 +429,7 @@ if __name__ == "__main__":
 
     vector_store = Chroma(collection_name="bid_info", embedding_function=embeddings, persist_directory=str(CHROMA_DB_PATH))
 
-    documents = load_data(vector_store, LoadDataStrategy.AddNew)
+    documents = load_data(vector_store, LoadDataStrategy.OldDataOnly)
     print("finished loading documents, count=", len(documents))
 
     indexed_documents: list[IndexedDocument] = [build_indexed_document(document) for document in documents]
