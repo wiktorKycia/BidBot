@@ -2,8 +2,7 @@
 .idea
 __pycache__
 
-data
-data_
+data*/
 data_old
 .env
 logs
