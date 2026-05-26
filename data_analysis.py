@@ -85,7 +85,12 @@ def get_ext(filename: str) -> str:
         return "Obraz"
     if suffix == "":
         return "bez rozszerzenia"
+    # Zwracamy surowe rozszerzenie — grupowanie w "inne" odbywa się w plot_all
     return f"inne ({suffix})"
+
+
+def is_inne(label: str) -> bool:
+    return label.startswith("inne (")
 
 
 # ══════════════════════════════════════════════════════════════════════════════════
@@ -103,7 +108,7 @@ def collect_stats(records: list[dict], attachments_dir: Path) -> dict:
         "all_att_sizes_kb": [],
         "zip_not_extracted": 0,
         "subfolder_count": 0,
-        "extracted_file_count": 0,  # tylko do KPI — ile plików doszło z ZIPów
+        "extracted_file_count": 0,
     }
 
     for rec in records:
@@ -144,9 +149,6 @@ def collect_stats(records: list[dict], attachments_dir: Path) -> dict:
             if att.get("is_zip") and att.get("extracted_status") not in ("success",):
                 stats["zip_not_extracted"] += 1
 
-    # ── Pliki z podfolderów (zawartość rozpakownych ZIPów) ──────────────────────
-    # Wliczamy je do TYCH SAMYCH liczników co pobrane załączniki, żeby wszystkie
-    # statystyki (typy, rozmiary) obejmowały kompletny zbiór plików.
     if attachments_dir.exists():
         for offer_folder in attachments_dir.iterdir():
             if not offer_folder.is_dir():
@@ -175,7 +177,37 @@ def collect_stats(records: list[dict], attachments_dir: Path) -> dict:
 
 
 # ══════════════════════════════════════════════════════════════════════════════════
-# 3. WYKRESY
+# 3. HELPERS DO GRUPOWANIA "inne"
+# ══════════════════════════════════════════════════════════════════════════════════
+
+def merge_inne_counter(counter: Counter) -> Counter:
+    """Scala wszystkie 'inne (...)' w jeden klucz 'inne'."""
+    merged = Counter()
+    for label, cnt in counter.items():
+        merged["inne" if is_inne(label) else label] += cnt
+    return merged
+
+
+def merge_inne_sizes(sizes_dict: dict) -> dict:
+    """Scala listy rozmiarów wszystkich 'inne (...)' w jedną listę pod kluczem 'inne'."""
+    merged = defaultdict(list)
+    for label, sizes in sizes_dict.items():
+        merged["inne" if is_inne(label) else label].extend(sizes)
+    return merged
+
+
+def inne_detail_lines(counter: Counter) -> list[str]:
+    """Zwraca posortowane linie opisu dla wszystkich rozszerzeń z grupy 'inne'."""
+    lines = []
+    for label, cnt in sorted(counter.items(), key=lambda x: -x[1]):
+        if is_inne(label):
+            ext = label[5:]  # np. "inne (.eml)" → "(.eml)"
+            lines.append(f"{ext}  ×{cnt}")
+    return lines
+
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# 4. WYKRESY
 # ══════════════════════════════════════════════════════════════════════════════════
 
 def fmt_size(kb: float) -> str:
@@ -191,12 +223,20 @@ def plot_all(stats: dict):
     avg_atts = np.mean(att_counts) if att_counts else 0
     avg_size = np.mean(stats["all_att_sizes_kb"]) if stats["all_att_sizes_kb"] else 0
 
-    fig = plt.figure(figsize=(20, 24), facecolor=BG)
-    fig.suptitle("Analiza zebranych przetargów", fontsize=22, fontweight="bold",
-                 color=TEXT, y=0.98)
+    # Zgrupowane wersje liczników (inne(*) → inne)
+    merged_counter = merge_inne_counter(stats["ext_counter"])
+    merged_sizes   = merge_inne_sizes(stats["ext_sizes_kb"])
 
-    gs = GridSpec(4, 2, figure=fig, hspace=0.45, wspace=0.35,
-                  top=0.95, bottom=0.04, left=0.07, right=0.97)
+    # Szczegóły "inne" do wyświetlenia na dole
+    inne_lines = inne_detail_lines(stats["ext_counter"])
+
+    fig = plt.figure(figsize=(20, 26), facecolor=BG)
+    fig.suptitle("Analiza zebranych przetargów", fontsize=22, fontweight="bold",
+                 color=TEXT, y=0.99)
+
+    gs = GridSpec(5, 2, figure=fig, hspace=0.48, wspace=0.35,
+                  top=0.97, bottom=0.02, left=0.07, right=0.97,
+                  height_ratios=[1.1, 1.8, 1.8, 1.8, 0.6])
 
     # ── KPI cards ───────────────────────────────────────────────────────────────
     ax_kpi = fig.add_subplot(gs[0, :])
@@ -228,23 +268,21 @@ def plot_all(stats: dict):
                     ha="center", va="center", fontsize=8, color=SUBTEXT,
                     transform=ax_kpi.transAxes)
 
-    # ── Wykres kołowy: typy plików (wszystkie) ──────────────────────────────────
+    # ── Wykres kołowy: typy plików (inne zgrupowane) ────────────────────────────
     ax_pie = fig.add_subplot(gs[1, 0])
-    ext_labels = list(stats["ext_counter"].keys())
-    ext_vals = list(stats["ext_counter"].values())
+    sorted_pairs = sorted(merged_counter.items(), key=lambda x: -x[1])
+    pie_labels, pie_vals = zip(*sorted_pairs) if sorted_pairs else ([], [])
 
-    if ext_vals:
-        sorted_pairs = sorted(zip(ext_vals, ext_labels), reverse=True)
-        ext_vals, ext_labels = zip(*sorted_pairs)
-        colors = [PALETTE[i % len(PALETTE)] for i in range(len(ext_labels))]
+    if pie_vals:
+        colors = [PALETTE[i % len(PALETTE)] for i in range(len(pie_labels))]
         wedges, _, autotexts = ax_pie.pie(
-            ext_vals, labels=None, autopct="%1.1f%%", colors=colors,
+            pie_vals, labels=None, autopct="%1.1f%%", colors=colors,
             startangle=140, pctdistance=0.78,
             wedgeprops={"edgecolor": "white", "linewidth": 1.5}
         )
         for at in autotexts:
             at.set_fontsize(8)
-        ax_pie.legend(wedges, ext_labels, loc="center left",
+        ax_pie.legend(wedges, pie_labels, loc="center left",
                       bbox_to_anchor=(1.0, 0.5), fontsize=9, frameon=False)
     ax_pie.set_title("Typy plików (pobrane + z ZIPów)", fontsize=13, fontweight="bold", pad=12)
 
@@ -278,11 +316,12 @@ def plot_all(stats: dict):
     ax_src.set_title("Źródła ofert", fontsize=13, fontweight="bold")
     ax_src.invert_yaxis()
 
-    # ── Słupkowy: średnia waga wg typu ──────────────────────────────────────────
+    # ── Słupkowy: średnia waga wg typu — BEZ "inne" ─────────────────────────────
     ax_size = fig.add_subplot(gs[2, 1])
-    if stats["ext_sizes_kb"]:
+    sizes_no_inne = {k: v for k, v in merged_sizes.items() if k != "inne"}
+    if sizes_no_inne:
         size_items = sorted(
-            ((ext, np.mean(sizes)) for ext, sizes in stats["ext_sizes_kb"].items()),
+            ((ext, np.mean(sizes)) for ext, sizes in sizes_no_inne.items()),
             key=lambda x: x[1], reverse=True
         )
         size_labels, size_means = zip(*size_items)
@@ -296,20 +335,20 @@ def plot_all(stats: dict):
             ax_size.text(bar.get_width() + 0.005, bar.get_y() + bar.get_height() / 2,
                          fmt_size(val_kb), va="center", fontsize=8.5, color=TEXT)
         ax_size.set_xlabel(f"Średni rozmiar ({unit})")
-        ax_size.set_title("Śr. waga pliku wg typu (pobrane + z ZIPów)", fontsize=13, fontweight="bold")
+        ax_size.set_title("""Śr. waga pliku wg typu\n(bez kategorii „inne”)""", fontsize=13, fontweight="bold")
         ax_size.invert_yaxis()
 
-    # ── Sumaryczny rozmiar wg typu ──────────────────────────────────────────────
+    # ── Słupkowy: łączna waga wg typu (inne zgrupowane) ─────────────────────────
     ax_total = fig.add_subplot(gs[3, 0])
-    if stats["ext_sizes_kb"]:
+    if merged_sizes:
         total_items = sorted(
-            ((ext, sum(sizes)) for ext, sizes in stats["ext_sizes_kb"].items()),
+            ((ext, sum(sizes)) for ext, sizes in merged_sizes.items()),
             key=lambda x: x[1], reverse=True
         )
         t_labels, t_vals_kb = zip(*total_items)
-        t_vals = [v / 1024 for v in t_vals_kb]
+        t_vals_mb = [v / 1024 for v in t_vals_kb]
         bars = ax_total.barh(
-            t_labels, t_vals,
+            t_labels, t_vals_mb,
             color=[PALETTE[i % len(PALETTE)] for i in range(len(t_labels))],
             edgecolor="white", linewidth=0.8
         )
@@ -352,6 +391,27 @@ def plot_all(stats: dict):
     ax_tbl.set_title("Spójność ID ↔ nazwa pliku JSON", fontsize=13,
                      fontweight="bold", pad=10)
 
+    # ── Panel dolny: szczegóły kategorii "inne" ─────────────────────────────────
+    ax_inne = fig.add_subplot(gs[4, :])
+    ax_inne.axis("off")
+
+    # Tło karty
+    rect = plt.Rectangle((0, 0), 1, 1, facecolor=CARD, edgecolor="#CBD5E1",
+                           linewidth=1.2, transform=ax_inne.transAxes, clip_on=False)
+    ax_inne.add_patch(rect)
+
+    if inne_lines:
+        header = 'Rozszerzenia zaklasyfikowane jako „inne":   '
+        body = "   |   ".join(inne_lines)
+        full_text = header + body
+    else:
+        full_text = '✓  Brak plików w kategorii „inne"'
+
+    ax_inne.text(0.5, 0.55, full_text,
+                 ha="center", va="center", fontsize=9,
+                 color=TEXT, transform=ax_inne.transAxes,
+                 wrap=True)
+
     out_dir = BASE_DIR / "analysis_output"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / "tender_analysis.png"
@@ -361,7 +421,7 @@ def plot_all(stats: dict):
 
 
 # ══════════════════════════════════════════════════════════════════════════════════
-# 4. MAIN
+# 5. MAIN
 # ══════════════════════════════════════════════════════════════════════════════════
 
 def main():
@@ -390,10 +450,14 @@ def main():
     print(f"  Podfoldery (rozpakowane):           {stats['subfolder_count']:>5}")
     print(f"  Niezgodności ID ↔ plik:             {len(stats['id_mismatches']):>5}")
     print("\n  Typy plików (pobrane + z ZIPów łącznie):")
-    for ext, cnt in stats["ext_counter"].most_common():
-        sizes = stats["ext_sizes_kb"].get(ext, [])
+    merged = merge_inne_counter(stats["ext_counter"])
+    for ext, cnt in merged.most_common():
+        sizes = merge_inne_sizes(stats["ext_sizes_kb"]).get(ext, [])
         avg = np.mean(sizes) if sizes else 0
         print(f"    {ext:<25} {cnt:>5} szt.  śr. {fmt_size(avg)}")
+    inne_lines = inne_detail_lines(stats["ext_counter"])
+    if inne_lines:
+        print(f"\n  Rozszerzenia w kategorii 'inne': {', '.join(inne_lines)}")
     print("═" * 50 + "\n")
 
     plot_all(stats)
