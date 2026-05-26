@@ -488,7 +488,7 @@ async def process_single_notice(
 
     if extraction_tasks:
         extraction_results = await asyncio.gather(*extraction_tasks, return_exceptions=True)
-        for idx, res in zip(extraction_indices, extraction_results, strict=False):
+        for idx, res in zip(extraction_indices, extraction_results, strict=True):
             if isinstance(res, Exception):
                 formatted_attachments[idx]["extracted_status"] = f"exception: {str(res)}"
             else:
