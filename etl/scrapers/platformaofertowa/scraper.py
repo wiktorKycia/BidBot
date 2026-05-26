@@ -4,6 +4,7 @@ import hashlib
 import logging
 import mimetypes
 import random
+import zipfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urljoin, urlparse
@@ -206,7 +207,7 @@ async def download_file(
     url = urljoin(BASE_URL, url)
 
     filename = url.split("/")[-1].split("?")[0]
-    valid_extensions = {".pdf", ".zip", ".7z", ".rar", ".doc", ".docx", ".xls", ".xlsx"}
+    valid_extensions = {".zip", ".7z", ".rar", ".doc", ".docx", ".xls", ".xlsx", ".pdf"}
     has_valid_extension = Path(filename).suffix.lower() in valid_extensions
 
     if not filename or not has_valid_extension:
@@ -316,6 +317,44 @@ async def download_file(
                 return metadata
 
 
+def _extract_zip_sync(filepath: Path, extract_to: Path) -> str:
+    try:
+        if not zipfile.is_zipfile(filepath):
+            logger.error(f"Plik {filepath.name} nie jest poprawnym archiwum ZIP (uszkodzony pobrany plik).")
+            return "corrupted_archive"
+
+        extract_to.mkdir(parents=True, exist_ok=True)
+        base_dir = extract_to.resolve()
+        with zipfile.ZipFile(filepath, "r") as zip_ref:
+            for member in zip_ref.infolist():
+                member_path = Path(member.filename.replace("\\", "/"))
+                if member_path.is_absolute():
+                    raise ValueError(f"Niebezpieczna ścieżka w archiwum ZIP: {member.filename}")
+
+                destination = (base_dir / member_path).resolve()
+                if destination != base_dir and base_dir not in destination.parents:
+                    raise ValueError(f"Niebezpieczna ścieżka w archiwum ZIP: {member.filename}")
+
+                if member.is_dir():
+                    destination.mkdir(parents=True, exist_ok=True)
+                    continue
+
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                with zip_ref.open(member, "r") as source, destination.open("wb") as target:
+                    target.write(source.read())
+
+        logger.info(f"Pomyślnie rozpakowano archiwum: {filepath.name} -> {extract_to.name}/")
+        return "success"
+    except zipfile.BadZipFile:
+        logger.error(f"Błąd struktury ZIP w pliku {filepath.name}.")
+        return "bad_zip_file"
+    except Exception as e:
+        logger.error(f"Nieoczekiwany błąd podczas rozpakowywania {filepath.name}: {e}")
+        return f"error: {str(e)}"
+    finally:
+        filepath.unlink(missing_ok=True)
+
+
 async def check_page_exists(session: aiohttp.ClientSession, page: int) -> bool:
     limit = 50
     offset = (page - 1) * limit
@@ -332,7 +371,7 @@ async def check_page_exists(session: aiohttp.ClientSession, page: int) -> bool:
         "offset": offset,
         "active_status": 1,
         "search_config": {"reranking_limit": 1000},
-        "sort_by": "submitting_offers_deadline_asc",
+        "sort_by": "publication_date_desc",
     }
 
     headers = {
@@ -382,6 +421,7 @@ async def process_single_notice(
     file_semaphore: asyncio.Semaphore,
 ) -> dict | None:
     notice_id = str(item.get("id"))
+    logger.info(f"Rozpoczęto analizę ogłoszenia: {notice_id}")
     original_url = extract_best_url(item)
 
     try:
@@ -420,18 +460,40 @@ async def process_single_notice(
                 valid_attachments_metadata.append(res)
 
     formatted_attachments = []
+    extraction_tasks = []
+    extraction_indices = []
+
     for att in valid_attachments_metadata:
         filename = att.get("filename", "")
-        formatted_attachments.append(
-            {
-                "url": att.get("url"),
-                "filename": filename,
-                "local_path": att.get("local_path"),
-                "downloaded": att.get("downloaded", False),
-                "is_zip": filename.lower().endswith(".zip"),
-                "extracted_status": None,
-            }
-        )
+        local_path_str = att.get("local_path")
+        filepath = BASE_DIR / local_path_str
+        is_zip = filename.lower().endswith(".zip")
+
+        att_entry = {
+            "url": att.get("url"),
+            "filename": filename,
+            "local_path": local_path_str,
+            "downloaded": att.get("downloaded", False),
+            "is_zip": is_zip,
+            "extracted_status": "not_applicable" if not is_zip else "pending",
+        }
+
+        if is_zip:
+            extract_dir = filepath.parent / filepath.stem
+
+            task = asyncio.to_thread(_extract_zip_sync, filepath, extract_dir)
+            extraction_tasks.append(task)
+            extraction_indices.append(len(formatted_attachments))
+
+        formatted_attachments.append(att_entry)
+
+    if extraction_tasks:
+        extraction_results = await asyncio.gather(*extraction_tasks, return_exceptions=True)
+        for idx, res in zip(extraction_indices, extraction_results, strict=True):
+            if isinstance(res, Exception):
+                formatted_attachments[idx]["extracted_status"] = f"exception: {str(res)}"
+            else:
+                formatted_attachments[idx]["extracted_status"] = res
 
     raw_cpvs = item.get("cpvCodes") or item.get("cpvs") or []
     cpv_codes = [str(c.get("code", c)) if isinstance(c, dict) else str(c) for c in raw_cpvs]
@@ -505,7 +567,7 @@ async def process_list_page(
         "offset": offset,
         "active_status": 1,
         "search_config": {"reranking_limit": 1000},
-        "sort_by": "submitting_offers_deadline_asc",
+        "sort_by": "publication_date_desc",
     }
 
     headers = {
