@@ -37,7 +37,6 @@ class TenderData(BaseModel):
     kryteria_oceny: list[str] = Field(default_factory=list, description="Kryteria oceny ofert.")
     wymagane_dokumenty: list[str] = Field(default_factory=list, description="Lista załączników i oświadczeń wymaganych od wykonawcy.")
     ryzyka: list[str] = Field(default_factory=list, description="Wymienione kary umowne, ryzyka lub szczególne obostrzenia w umowie.")
-    link_do_zrodla: str | MissingDataFallback = Field(default="not_found", description="Link URL do przetargu, jeśli występuje w dokumentacji.")
 
 
 def extract_text_from_pdf(file_path: Path) -> str:

@@ -51,8 +51,7 @@ def create_tables():
             llm_wymagania_techniczne TEXT[],
             llm_kryteria_oceny TEXT[],
             llm_wymagane_dokumenty TEXT[],
-            llm_ryzyka TEXT[],
-            llm_link_do_zrodla TEXT
+            llm_ryzyka TEXT[]
         );
         """,
         """
@@ -262,8 +261,7 @@ def save_llm_data(tender_id: str, tender_data) -> bool:
                     llm_wymagania_techniczne = %s,
                     llm_kryteria_oceny = %s,
                     llm_wymagane_dokumenty = %s,
-                    llm_ryzyka = %s,
-                    llm_link_do_zrodla = %s
+                    llm_ryzyka = %s
                 WHERE id = %s;
                 """,
                 (
@@ -276,7 +274,6 @@ def save_llm_data(tender_id: str, tender_data) -> bool:
                     data.get("kryteria_oceny", []),
                     data.get("wymagane_dokumenty", []),
                     data.get("ryzyka", []),
-                    data.get("link_do_zrodla"),
                     tender_id
                 )
             )
