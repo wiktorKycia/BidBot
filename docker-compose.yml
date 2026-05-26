@@ -1,4 +1,20 @@
 services:
+  db:
+    image: postgres:alpine
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=${DB_NAME}
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   backend:
     build:
       context: .
@@ -9,6 +25,7 @@ services:
       - .env
     environment:
       - LOAD_DATA_STRATEGY=OldDataOnly
+      - DB_HOST=db
     volumes:
       - ./etl/vector_db/chroma_langchain_db:/app/etl/vector_db/chroma_langchain_db
       - ./data:/app/data
@@ -31,6 +48,9 @@ services:
       timeout: 5s
       retries: 5
       start_period: 6000s
+    depends_on:
+      db:
+        condition: service_healthy
 
   frontend:
     build:
@@ -50,3 +70,6 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+
+volumes:
+  pgdata:
