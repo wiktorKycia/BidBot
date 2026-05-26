@@ -74,6 +74,8 @@ app = FastAPI(title="BidBot Chat API", lifespan=lifespan)
 
 @app.post("/chat", response_model=ChatResponse)
 def chat_with_bot(request: ChatRequest):
+    if not app_ready:
+        raise HTTPException(status_code=503, detail="initializing")
     try:
         bot_answer = ask(request.message, request.history)
         return ChatResponse(answer=bot_answer)
