@@ -35,6 +35,7 @@ if user_input := st.chat_input("Zadaj pytanie o przetargi..."):
             response.raise_for_status()
             answer = response.json()["answer"]
             st.markdown(answer)
+            st.session_state.messages.append({"role": "assistant", "content": answer})
         except requests.exceptions.ConnectionError:
             st.error(f"❌ Błąd połączenia! Streamlit próbował uderzyć pod: **{API_URL}**")
         except requests.exceptions.HTTPError:
@@ -42,4 +43,4 @@ if user_input := st.chat_input("Zadaj pytanie o przetargi..."):
         except Exception as e:
             st.error(f"❌ Nieoczekiwany błąd: {e}")
 
-    st.session_state.messages.append({"role": "assistant", "content": answer})
+
