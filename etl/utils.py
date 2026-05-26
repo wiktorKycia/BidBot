@@ -13,3 +13,9 @@ async def save_json(filepath: Path, data: dict):
 async def save_to_file(filepath: Path, data: str):
     async with aiofiles.open(filepath, mode="w", encoding="utf-8") as f:
         await f.write(data)
+
+
+async def read_json(filepath: Path) -> dict:
+    async with aiofiles.open(filepath, encoding="utf-8") as f:
+        data = await f.read()
+        return json.loads(data)
