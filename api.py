@@ -10,7 +10,7 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from pydantic import BaseModel
 
 import etl.vector_db.main as ragemain
-from etl.llms import MODEL, require_openai_api_key
+from etl.llms import MODEL
 from etl.loggers import setup_logging
 from etl.vector_db.main import ask, build_indexed_document
 from etl.vector_db.models import LoadDataStrategy

@@ -42,5 +42,3 @@ if user_input := st.chat_input("Zadaj pytanie o przetargi..."):
             st.error(f"❌ Błąd API [{response.status_code}]: {response.text}")
         except Exception as e:
             st.error(f"❌ Nieoczekiwany błąd: {e}")
-
-
