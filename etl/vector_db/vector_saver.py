@@ -58,7 +58,6 @@ async def extend_document(document: Document) -> list[Document]:
     document.metadata["source_type"] = "json"
     document.metadata["title"] = offer["title"]
     logger.debug(f"json Metadata:  {document.metadata}")
-    # print(f"json Content:  {document.page_content}")
     logger.debug(f"attachments count: {len(offer['scraper_attachments'])}")
 
     attachments_list = offer["scraper_attachments"]
