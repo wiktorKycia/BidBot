@@ -57,9 +57,9 @@ async def extend_document(document: Document) -> list[Document]:
     document.metadata["offer_id"] = offer_id
     document.metadata["source_type"] = "json"
     document.metadata["title"] = offer["title"]
-    print(f"json Metadata:  {document.metadata}")
+    logger.debug(f"json Metadata:  {document.metadata}")
     # print(f"json Content:  {document.page_content}")
-    print(f"attachments count: {len(offer['scraper_attachments'])}")
+    logger.debug(f"attachments count: {len(offer['scraper_attachments'])}")
 
     attachments_list = offer["scraper_attachments"]
     attachment_documents: list[Document] = []
@@ -122,7 +122,7 @@ def extend_and_save_documents(vector_store: Chroma, documents: list[Document]) -
     return extended_documents
 
 
-def load_data(vector_store: Chroma, load_data_strategy: LoadDataStrategy = 1) -> list[Document]:
+def load_data(vector_store: Chroma, load_data_strategy: LoadDataStrategy = LoadDataStrategy.AddNew) -> list[Document]:
     # Instead of pulling all existing data at once which can cause "too many SQL variables", we batch it
     total_count = vector_store._collection.count()
     existing_ids = []
@@ -166,9 +166,9 @@ def load_data(vector_store: Chroma, load_data_strategy: LoadDataStrategy = 1) ->
             new_docs = extend_and_save_documents(vector_store, documents)
 
             # Append existing old documents so the total list returned contains both
+            documents = list(new_docs)
             for doc, meta in zip(existing_documents, existing_metadatas, strict=True):
                 documents.append(Document(page_content=doc, metadata=meta))
-            documents = new_docs
 
         case LoadDataStrategy.OldDataOnly:
             logger.info(f"loading documents from vector store count={len(existing_ids)}")

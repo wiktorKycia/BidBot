@@ -23,8 +23,6 @@ OPENAI_API_KEY = require_openai_api_key()
 
 MODEL_EMBEDDINGS = "text-embedding-3-small"
 
-FRESH_DATA_RELOAD = True  # if set to True, the data will be first deleted, then loaded, for testing purposes
-
 CHROMA_DB_PATH = Path("chroma_langchain_db")
 TAGS_PATH = BASE_DIR / "etl" / "ketword_tagger" / "tags.json"
 
@@ -96,7 +94,7 @@ def format_indexed_document(record: IndexedDocument, detailed: bool = False) -> 
             f"Source: {record.source_url}",
         ]
         if record.offer_id:
-            lines.append(f"Transaction ID: {record.offer_id}")
+            lines.append(f"Offer ID: {record.offer_id}")
         lines.append("Content:")
         lines.append(record.raw_text)
         return "\n".join(lines)
@@ -325,14 +323,12 @@ def hybrid_retrieve(question: str, conversation_history: list[dict[str, str]]) -
             seen_texts.add(record.raw_text)
             combined.append(record)
 
-    added_semantic = 0
     for record in semantic_matches:
-        if added_semantic >= plan.top_k:
+        if len(combined) >= plan.top_k:
             break
         if record.raw_text not in seen_texts:
             seen_texts.add(record.raw_text)
             combined.append(record)
-            added_semantic += 1
 
     logger.debug(
         "hybrid_retrieve_final=%s",

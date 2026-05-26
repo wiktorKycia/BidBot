@@ -1,7 +1,10 @@
+import os
+
 import requests
 import streamlit as st
 
-API_URL = "http://localhost:8000/chat"
+BASE_URL = os.getenv("BACKEND_URL", "http://backend:8000")
+API_URL = f"{BASE_URL}/chat"
 
 st.set_page_config(page_title="BidBot Chat", layout="wide")
 st.title("BidBot")
@@ -32,14 +35,12 @@ if user_input := st.chat_input("Zadaj pytanie o przetargi..."):
             response.raise_for_status()
             answer = response.json()["answer"]
             st.markdown(answer)
+            st.session_state.messages.append({"role": "assistant", "content": answer})
         except requests.exceptions.ConnectionError:
-            answer = "❌ Nie można połączyć z API (port 8000). Czy serwer jest uruchomiony?"
-            st.error(answer)
-        except requests.exceptions.HTTPError as e:
-            answer = f"❌ Błąd API [{response.status_code}]: {response.text}"
-            st.error(answer)
+            st.error(f"❌ Błąd połączenia! Streamlit próbował uderzyć pod: **{API_URL}**")
+        except requests.exceptions.HTTPError:
+            st.error(f"❌ Błąd API [{response.status_code}]: {response.text}")
         except Exception as e:
-            answer = f"❌ Nieoczekiwany błąd: {e}"
-            st.error(answer)
+            st.error(f"❌ Nieoczekiwany błąd: {e}")
 
-    st.session_state.messages.append({"role": "assistant", "content": answer})
+

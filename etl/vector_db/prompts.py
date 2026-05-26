@@ -1,3 +1,4 @@
+# ruff: noqa: W291
 # This is the template for the system message used to instruct the AI when deciding whether to search the vector database for relevant information
 use_search_system_message_template = """You are the planner and detector of the need to search the vector database.
 Your task is to assess whether a search in the vector database is helpful in replying to the user.

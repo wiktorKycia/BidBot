@@ -53,5 +53,6 @@ extend-select = [
     "SIM",
 ]
 ignore = [
-    "COM812"
+    "COM812",
+    "SIM105"
 ]
