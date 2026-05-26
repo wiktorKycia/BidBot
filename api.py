@@ -38,7 +38,7 @@ vector_store = Chroma(collection_name="bid_info_json", embedding_function=embedd
 try:
     setup_logging()
 except Exception:
-    pass
+    logging.getLogger(__name__).exception("Failed to initialize logging via setup_logging()")
 
 ragemain.logger = logging.getLogger("vector_db")
 ragemain.vector_store = vector_store
