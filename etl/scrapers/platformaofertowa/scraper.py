@@ -21,7 +21,7 @@ from etl.scrapers.settings import ATTACHMENTS_DIR, BASE_DIR, LAST_RUN_FILE, PARS
 from etl.utils import save_json, save_to_file
 
 setup_logging()
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("scraper")
 
 BASE_URL = "https://platformaofertowa.pl"
 API_LIST_URL = "https://api.platformaofertowa.pl/tenders/search/best-match"
