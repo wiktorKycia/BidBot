@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import re
 from operator import itemgetter
 from pathlib import Path
@@ -386,7 +387,13 @@ if __name__ == "__main__":
 
     vector_store = Chroma(collection_name="bid_info_json", embedding_function=embeddings, persist_directory=str(CHROMA_DB_PATH))
 
-    documents = load_data(vector_store, LoadDataStrategy.OldDataOnly)
+    strategy_name = os.getenv("LOAD_DATA_STRATEGY", "OldDataOnly")
+    try:
+        strategy = LoadDataStrategy[strategy_name]
+    except KeyError:
+        strategy = LoadDataStrategy.OldDataOnly
+
+    documents = load_data(vector_store, strategy)
     print("finished loading documents, count=", len(documents))
 
     indexed_documents: list[IndexedDocument] = [build_indexed_document(document) for document in documents]

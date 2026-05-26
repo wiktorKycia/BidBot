@@ -122,7 +122,7 @@ def extend_and_save_documents(vector_store: Chroma, documents: list[Document]) -
     return extended_documents
 
 
-def load_data(vector_store: Chroma, load_data_strategy: LoadDataStrategy = LoadDataStrategy.AddNew) -> list[Document]:
+def load_data(vector_store: Chroma, load_data_strategy: LoadDataStrategy = LoadDataStrategy.OldDataOnly) -> list[Document]:
     # Instead of pulling all existing data at once which can cause "too many SQL variables", we batch it
     total_count = vector_store._collection.count()
     existing_ids = []
