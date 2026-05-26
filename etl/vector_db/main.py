@@ -90,7 +90,7 @@ def format_indexed_document(record: IndexedDocument) -> str:
         f"Source: {record.source_url}",
     ]
     if record.offer_id:
-        lines.append(f"Transaction ID: {record.offer_id}")
+        lines.append(f"Offer ID: {record.offer_id}")
     lines.append("Content:")
     lines.append(record.raw_text)
     return "\n".join(lines)
