@@ -14,6 +14,8 @@ from etl.utils import read_json
 from etl.vector_db.models import LoadDataStrategy
 
 MAX_CHROMA_BATCH = 5461
+DOCUMENT_CHUNK_SIZE = 1000
+CHUNK_OVERLAP = 100
 
 setup_logging()
 logger = logging.getLogger("vector_db")
@@ -32,7 +34,7 @@ def convert_file(filepath: Path) -> list[Document]:
         logger.error(f"Error loading {filepath}: {e}")
         return []
 
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=DOCUMENT_CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)
     docs = text_splitter.split_documents(docs)
     for i, doc in enumerate(docs):
         doc.metadata["seq_num"] = i + 1
