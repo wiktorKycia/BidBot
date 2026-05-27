@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 from pathlib import Path
+from collections import Counter
 
 from etl.loggers import setup_logging
 from etl.scrapers.settings import PARSED_DIR
@@ -33,14 +34,14 @@ async def main():
     tasks = [extract_tags_from_file(filename) for filename in filenames]
 
     results = await asyncio.gather(*tasks, return_exceptions=True)
-    tag_list: set[str] = set()
+    tag_counts: Counter[str] = Counter()
     for res in results:
         if isinstance(res, Exception):
             logger.error(f"Błąd przy tagowaniu pliku: {res!r}")
         else:
-            tag_list.update(res)
+            tag_counts.update(tag.strip() for tag in res if tag and tag.strip())
 
-    await save_json(Path(__file__).resolve().parent / "tags.json", {"tags": [tag.strip() for tag in tag_list]})
+    await save_json(Path(__file__).resolve().parent / "tags.json", {"tags": dict(tag_counts)})
 
 
 if __name__ == "__main__":
