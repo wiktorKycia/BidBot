@@ -14,6 +14,18 @@ from etl.utils import read_json
 from etl.vector_db.models import LoadDataStrategy
 
 MAX_CHROMA_BATCH = 5461
+DOCUMENT_CHUNK_SIZE = 1000
+CHUNK_OVERLAP = 100
+
+LOADERS = {
+    ".pdf": PyPDFLoader,
+    ".docx": UnstructuredWordDocumentLoader,
+    ".doc": UnstructuredWordDocumentLoader,
+    ".docm": UnstructuredWordDocumentLoader,
+    ".xlsx": UnstructuredExcelLoader,
+    ".xls": UnstructuredExcelLoader,
+    ".xml": UnstructuredXMLLoader,
+}
 
 setup_logging()
 logger = logging.getLogger("vector_db")
@@ -32,7 +44,7 @@ def convert_file(filepath: Path) -> list[Document]:
         logger.error(f"Error loading {filepath}: {e}")
         return []
 
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=DOCUMENT_CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)
     docs = text_splitter.split_documents(docs)
     for i, doc in enumerate(docs):
         doc.metadata["seq_num"] = i + 1
@@ -40,15 +52,8 @@ def convert_file(filepath: Path) -> list[Document]:
 
 
 def create_loader(filepath: Path):
-    if filepath.suffix == ".pdf":
-        return PyPDFLoader(str(filepath))
-    elif filepath.suffix in [".docx", ".doc", ".docm"]:
-        return UnstructuredWordDocumentLoader(str(filepath))
-    elif filepath.suffix in [".xlsx", ".xls"]:
-        return UnstructuredExcelLoader(str(filepath))
-    elif filepath.suffix == ".xml":
-        return UnstructuredXMLLoader(str(filepath))
-    return None
+    loader_cls = LOADERS.get(filepath.suffix)
+    return loader_cls(str(filepath)) if loader_cls else None
 
 
 async def extend_document(document: Document) -> list[Document]:
@@ -120,7 +125,7 @@ def extend_and_save_documents(vector_store: Chroma, documents: list[Document]) -
     return extended_documents
 
 
-def load_data(vector_store: Chroma, load_data_strategy: LoadDataStrategy = LoadDataStrategy.AddNew) -> list[Document]:
+def load_data(vector_store: Chroma, load_data_strategy: LoadDataStrategy = LoadDataStrategy.OldDataOnly) -> list[Document]:
     # Instead of pulling all existing data at once which can cause "too many SQL variables", we batch it
     total_count = vector_store._collection.count()
     existing_ids = []

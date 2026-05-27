@@ -2,11 +2,13 @@ services:
   backend:
     build:
       context: .
-      dockerfile: Dockerfile.backend
+      dockerfile: backend.Dockerfile
     ports:
       - "8000:8000"
     env_file:
       - .env
+    environment:
+      - LOAD_DATA_STRATEGY=OldDataOnly
     volumes:
       - ./etl/vector_db/chroma_langchain_db:/app/etl/vector_db/chroma_langchain_db
       - ./data:/app/data
@@ -33,7 +35,7 @@ services:
   frontend:
     build:
       context: .
-      dockerfile: Dockerfile.frontend
+      dockerfile: frontend.Dockerfile
     ports:
       - "8501:8501"
     env_file:
