@@ -11,6 +11,5 @@ RUN uv sync --frozen --no-dev
 
 COPY api.py ./
 COPY etl/ ./etl/
-COPY data/ ./data/
 
 CMD ["uv", "run", "uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000"]
