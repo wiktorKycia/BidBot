@@ -30,7 +30,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 6000s
+      start_period: 180s
 
   frontend:
     build:

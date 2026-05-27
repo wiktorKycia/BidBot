@@ -31,9 +31,20 @@ if user_input := st.chat_input("Zadaj pytanie o przetargi..."):
     st.session_state.messages.append({"role": "user", "content": user_input})
 
     api_history = []
-    for i in range(0, len(st.session_state.messages) - 1, 2):
-        if i + 1 < len(st.session_state.messages):
-            api_history.append({"user": st.session_state.messages[i]["content"], "assistant": st.session_state.messages[i + 1]["content"]})
+    history_messages = st.session_state.messages[:-1]
+    for idx, msg in enumerate(history_messages):
+        if msg["role"] == "user":
+            # Search for the subsequent assistant response
+            assistant_content = ""
+            for next_msg in history_messages[idx + 1 :]:
+                if next_msg["role"] == "assistant":
+                    assistant_content = next_msg["content"]
+                    break
+                elif next_msg["role"] == "user":
+                    # If another user message appears before an assistant response, ignore this unpaired message
+                    break
+            if assistant_content:
+                api_history.append({"user": msg["content"], "assistant": assistant_content})
 
     payload = {"message": user_input, "history": api_history}
 

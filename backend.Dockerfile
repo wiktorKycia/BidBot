@@ -9,13 +9,7 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev
 
-# kopiujemy tylko pliki z kodem
 COPY api.py ./
 COPY etl/ ./etl/
-
-# budowanie lokalnej paczki etl (rozwiązuje problem z importami)
-RUN uv pip install -e .
-# dodawanie zbudowanej paczki do znanych przez uv
-RUN uv sync
 
 CMD ["uv", "run", "uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000"]
