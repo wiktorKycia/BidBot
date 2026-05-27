@@ -17,6 +17,16 @@ MAX_CHROMA_BATCH = 5461
 DOCUMENT_CHUNK_SIZE = 1000
 CHUNK_OVERLAP = 100
 
+LOADERS = {
+    ".pdf": PyPDFLoader,
+    ".docx": UnstructuredWordDocumentLoader,
+    ".doc": UnstructuredWordDocumentLoader,
+    ".docm": UnstructuredWordDocumentLoader,
+    ".xlsx": UnstructuredExcelLoader,
+    ".xls": UnstructuredExcelLoader,
+    ".xml": UnstructuredXMLLoader,
+}
+
 setup_logging()
 logger = logging.getLogger("vector_db")
 
@@ -42,15 +52,8 @@ def convert_file(filepath: Path) -> list[Document]:
 
 
 def create_loader(filepath: Path):
-    if filepath.suffix == ".pdf":
-        return PyPDFLoader(str(filepath))
-    elif filepath.suffix in [".docx", ".doc", ".docm"]:
-        return UnstructuredWordDocumentLoader(str(filepath))
-    elif filepath.suffix in [".xlsx", ".xls"]:
-        return UnstructuredExcelLoader(str(filepath))
-    elif filepath.suffix == ".xml":
-        return UnstructuredXMLLoader(str(filepath))
-    return None
+    loader_cls = LOADERS.get(filepath.suffix)
+    return loader_cls(str(filepath)) if loader_cls else None
 
 
 async def extend_document(document: Document) -> list[Document]:
