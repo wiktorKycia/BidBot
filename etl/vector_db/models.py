@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -13,6 +14,7 @@ class LoadDataStrategy(Enum):
         ReloadAll: Clear and reload all documents from scratch.
         OldDataOnly: Use only existing documents without adding new ones.
     """
+
     AddNew = 1
     ReloadAll = 2
     OldDataOnly = 3
@@ -34,6 +36,7 @@ class RetrievalPlan(BaseModel):
         top_k: Maximum number of documents to retrieve.
         warning: Flag indicating potential jailbreak or rule-breaking attempt.
     """
+
     needs_search: bool = Field(description="Whether retrieval is needed")
     search_query: str = Field(description="A focused search query")
     keywords: list[str] = Field(description="A list of keywords from the user prompt for filtering tag summaries", default_factory=list)
@@ -56,6 +59,7 @@ class OfferSummary(BaseModel):
         tags: List of categorization tags associated with the offer.
         short_description: Brief excerpt from the offer description (truncated).
     """
+
     offer_id: str = Field(description="Transaction ID of the offer")
     title: str = Field(description="Title of the offer")
     source_url: str = Field(description="URL to the offer source")
@@ -80,6 +84,7 @@ class IndexedDocument:
         raw_text: Full text content of the document.
         source_type: Origin type of the document (json/attachment).
     """
+
     document: Any
     filepath: str
     source_url: str

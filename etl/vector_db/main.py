@@ -1,13 +1,13 @@
+import asyncio
 import json
 import logging
 import os
 import re
-from logging import DEBUG
+from collections import defaultdict
 from operator import itemgetter
 from pathlib import Path
 from typing import Any
-import asyncio
-from collections import defaultdict
+
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate, SystemMessagePromptTemplate
@@ -15,11 +15,11 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 from etl.llms import MODEL, require_openai_api_key
 from etl.loggers import setup_logging
+from etl.scrapers.settings import BASE_DIR
 from etl.utils import read_json
-from etl.vector_db.models import IndexedDocument, RetrievalPlan, LoadDataStrategy, OfferSummary
+from etl.vector_db.models import IndexedDocument, LoadDataStrategy, OfferSummary, RetrievalPlan
 from etl.vector_db.prompts import main_system_message_template, use_search_system_message_template
 from etl.vector_db.vector_saver import load_data
-from etl.scrapers.settings import BASE_DIR
 
 OPENAI_API_KEY = require_openai_api_key()
 
@@ -131,8 +131,9 @@ def build_indexed_document(document: Document) -> IndexedDocument:
     offer_id = document.metadata.get("offer_id", "unknown")
     source_type = document.metadata.get("source_type", "unknown")
 
-    return IndexedDocument(document=document, source_url=source, filepath=filepath, title=title, offer_id=offer_id, raw_text=raw_text,
-                           source_type=source_type)
+    return IndexedDocument(
+        document=document, source_url=source, filepath=filepath, title=title, offer_id=offer_id, raw_text=raw_text, source_type=source_type
+    )
 
 
 def format_indexed_document(record: IndexedDocument, detailed: bool = False) -> str:
@@ -384,10 +385,7 @@ def semantic_lookup(plan: RetrievalPlan) -> list[IndexedDocument]:
         if chroma_filter:
             kwargs["filter"] = chroma_filter
 
-        results = vector_store.similarity_search_with_relevance_scores(
-            search_query,
-            **kwargs
-        )
+        results = vector_store.similarity_search_with_relevance_scores(search_query, **kwargs)
     except Exception as e:
         logger.exception(f"semantic lookup failed: {e}")
         return []
@@ -408,7 +406,7 @@ def semantic_lookup(plan: RetrievalPlan) -> list[IndexedDocument]:
         ),
     )
 
-    semantic_matches: list[IndexedDocument] = [build_indexed_document(document) for document, _ in results[:plan.top_k]]
+    semantic_matches: list[IndexedDocument] = [build_indexed_document(document) for document, _ in results[: plan.top_k]]
 
     logger.debug(
         "semantic_lookup_selected=%s",

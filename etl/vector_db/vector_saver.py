@@ -181,6 +181,7 @@ def extend_and_save_documents(vector_store: Chroma, documents: list[Document]) -
     Returns:
         A list of all extended documents that were added to the vector store.
     """
+
     async def process_documents(docs):
         tasks = [extend_document(document) for document in docs]
         results = await asyncio.gather(*tasks, return_exceptions=True)

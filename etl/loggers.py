@@ -33,7 +33,7 @@ LOGGING_CONFIG = {
         "file_app": {
             "class": "logging.handlers.RotatingFileHandler",
             "filename": LOG_DIR / "app.log",
-            "maxBytes": 5 * 1024 * 1024, # 5 MB
+            "maxBytes": 5 * 1024 * 1024,  # 5 MB
             "backupCount": 3,
             "formatter": "detailed",
             "level": "DEBUG",
@@ -42,7 +42,7 @@ LOGGING_CONFIG = {
         "file_vector_db": {
             "class": "logging.handlers.RotatingFileHandler",
             "filename": LOG_DIR / "vector_db.log",
-            "maxBytes": 5 * 1024 * 1024, # 5 MB
+            "maxBytes": 5 * 1024 * 1024,  # 5 MB
             "backupCount": 3,
             "formatter": "detailed",
             "level": "DEBUG",
@@ -51,7 +51,7 @@ LOGGING_CONFIG = {
         "file_scraper": {
             "class": "logging.handlers.RotatingFileHandler",
             "filename": LOG_DIR / "scraper.log",
-            "maxBytes": 5 * 1024 * 1024, # 5 MB
+            "maxBytes": 5 * 1024 * 1024,  # 5 MB
             "backupCount": 3,
             "formatter": "detailed",
             "level": "DEBUG",
