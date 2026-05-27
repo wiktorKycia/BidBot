@@ -17,9 +17,10 @@ async def extract_tags_from_file(filename: str):
         filepath = PARSED_DIR / filename
         data: dict = await read_json(filepath)
 
-        if data["enrichment"]:
-            if data["enrichment"]["tags"]:
-                return data["enrichment"]["tags"]
+        enrichment = data.get("enrichment", {})
+        tags = enrichment.get("tags", [])
+        if tags:
+            return tags
         else:
             logger.error(f"Nie ma tagów dla pliku: {filename}")
         return []

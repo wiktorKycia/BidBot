@@ -12,7 +12,7 @@ from etl.scrapers.settings import ATTACHMENTS_DIR, PARSED_DIR, RAW_DIR
 from etl.utils import save_json
 
 setup_logging()
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("scraper")
 
 API_URL = "https://ezamowienia.gov.pl/mo-board/api/v1/notice"
 

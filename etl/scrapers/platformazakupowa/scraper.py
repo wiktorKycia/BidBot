@@ -32,7 +32,7 @@ from etl.scrapers.settings import (
 from etl.utils import save_json, save_to_file
 
 setup_logging()
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("scraper")
 
 BASE_URL = "https://platformazakupowa.pl"
 ALL_RESOURCES_URL = "https://platformazakupowa.pl/all"
