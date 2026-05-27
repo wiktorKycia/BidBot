@@ -239,7 +239,7 @@ def plan_search(question: str, conversation_history: list[dict[str, str]]) -> Re
     planner = ChatOpenAI(model=MODEL, temperature=0, max_retries=3).with_structured_output(RetrievalPlan)
 
     try:
-        payload = planner.invoke(planning_prompt.format_messages(history=history_text, question=question))
+        plan: RetrievalPlan = planner.invoke(planning_prompt.format_messages(history=history_text, question=question))
     except KeyError as e:
         logger.exception(f"The prompt formatting failed due to missing `history` or `question` variables: {e}")
         raise
@@ -247,11 +247,11 @@ def plan_search(question: str, conversation_history: list[dict[str, str]]) -> Re
         logger.exception(f"Error from planner: {e}")
         raise
 
-    logger.debug(f"retrieval_plan_raw_output={payload}")
+    logger.debug(f"retrieval_plan_raw_output={plan.model_dump_json(indent=2)}")
 
     # if offer id is present, match it directly against the indexed documents
     detected_ids = extract_offer_ids_from_text(question, format_history(conversation_history, 2))
-    planned_ids = payload.offer_ids
+    planned_ids = plan.offer_ids
     planned_ids = [str(item) for item in planned_ids if str(item).strip()]
 
     # intersect planner logic with extracted regex to limit hallucinations
@@ -259,12 +259,12 @@ def plan_search(question: str, conversation_history: list[dict[str, str]]) -> Re
     offer_ids = [pid for pid in planned_ids if pid in detected_ids_set]
     offer_ids = unique_strings(offer_ids)
 
-    search_query = str(payload.search_query).strip()
+    search_query = str(plan.search_query).strip()
     if not search_query and not offer_ids:
         search_query = question.strip()
 
-    needs_search = bool(payload.needs_search)
-    top_k = payload.top_k
+    needs_search = bool(plan.needs_search)
+    top_k = plan.top_k
     if not isinstance(top_k, int) or top_k < 0:
         top_k = 3
     top_k = min(top_k, MAX_CONTEXT_DOCS)
@@ -272,19 +272,34 @@ def plan_search(question: str, conversation_history: list[dict[str, str]]) -> Re
     if offer_ids:
         needs_search = True
 
+    excluded_offer_ids = [str(item) for item in plan.excluded_offer_ids if str(item).strip()]
+    excluded_offer_ids = unique_strings(excluded_offer_ids)
+    keywords = [str(kw).strip() for kw in plan.keywords if str(kw).strip()]
+
     logger.debug(
         "retrieval_plan_final=%s",
         to_json_log(
             {
                 "needs_search": needs_search,
                 "search_query": search_query,
+                "keywords": keywords,
                 "offer_ids": list(offer_ids),
+                "excluded_offer_ids": excluded_offer_ids,
                 "top_k": top_k,
+                "warning": bool(plan.warning),
             }
         ),
     )
 
-    return RetrievalPlan(needs_search=needs_search, search_query=search_query, offer_ids=offer_ids, top_k=top_k)
+    return RetrievalPlan(
+        needs_search=needs_search,
+        search_query=search_query,
+        keywords=keywords,
+        offer_ids=offer_ids,
+        excluded_offer_ids=excluded_offer_ids,
+        top_k=top_k,
+        warning=bool(plan.warning),
+    )
 
 
 def exact_offer_lookup(offer_ids: list[str]) -> list[IndexedDocument]:
@@ -443,6 +458,8 @@ def hybrid_retrieve(question: str, conversation_history: list[dict[str, str]]) -
     seen_texts: set[str] = set()
 
     for record in exact_matches:
+        if record.offer_id in plan.excluded_offer_ids:
+            continue
         if record.raw_text not in seen_texts:
             seen_texts.add(record.raw_text)
             combined.append(record)
@@ -450,6 +467,8 @@ def hybrid_retrieve(question: str, conversation_history: list[dict[str, str]]) -
     for record in semantic_matches:
         if len(combined) >= plan.top_k:
             break
+        if record.offer_id in plan.excluded_offer_ids:
+            continue
         if record.raw_text not in seen_texts:
             seen_texts.add(record.raw_text)
             combined.append(record)
