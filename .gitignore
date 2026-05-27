@@ -2,10 +2,8 @@
 .idea
 __pycache__
 
-data
-data_
-data_old
+data*/
 .env
 logs
 chroma_langchain_db*
-tags.json
+*.png
