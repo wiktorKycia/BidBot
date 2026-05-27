@@ -14,6 +14,5 @@ RUN uv pip install pip && uv run python -m spacy download en_core_web_sm
 
 COPY api.py ./
 COPY etl/ ./etl/
-COPY data/ ./data/
 
 CMD ["uv", "run", "uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000"]
