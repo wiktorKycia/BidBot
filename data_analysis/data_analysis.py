@@ -6,38 +6,49 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import numpy as np
 from matplotlib.gridspec import GridSpec
-from etl.scrapers.settings import BASE_DIR, PARSED_DIR, ATTACHMENTS_DIR
 
+from etl.scrapers.settings import ATTACHMENTS_DIR, BASE_DIR, PARSED_DIR
 
 PALETTE = [
-    "#2563EB", "#16A34A", "#DC2626", "#D97706", "#7C3AED",
-    "#0891B2", "#DB2777", "#65A30D", "#EA580C", "#6B7280",
+    "#2563EB",
+    "#16A34A",
+    "#DC2626",
+    "#D97706",
+    "#7C3AED",
+    "#0891B2",
+    "#DB2777",
+    "#65A30D",
+    "#EA580C",
+    "#6B7280",
 ]
 BG = "#F8FAFC"
 CARD = "#FFFFFF"
 TEXT = "#1E293B"
 SUBTEXT = "#64748B"
 
-plt.rcParams.update({
-    "font.family": "DejaVu Sans",
-    "axes.facecolor": CARD,
-    "figure.facecolor": BG,
-    "axes.edgecolor": "#E2E8F0",
-    "axes.labelcolor": TEXT,
-    "xtick.color": SUBTEXT,
-    "ytick.color": SUBTEXT,
-    "text.color": TEXT,
-    "axes.spines.top": False,
-    "axes.spines.right": False,
-    "axes.grid": True,
-    "grid.color": "#E2E8F0",
-    "grid.linewidth": 0.6,
-})
+plt.rcParams.update(
+    {
+        "font.family": "DejaVu Sans",
+        "axes.facecolor": CARD,
+        "figure.facecolor": BG,
+        "axes.edgecolor": "#E2E8F0",
+        "axes.labelcolor": TEXT,
+        "xtick.color": SUBTEXT,
+        "ytick.color": SUBTEXT,
+        "text.color": TEXT,
+        "axes.spines.top": False,
+        "axes.spines.right": False,
+        "axes.grid": True,
+        "grid.color": "#E2E8F0",
+        "grid.linewidth": 0.6,
+    }
+)
 
 
 # ══════════════════════════════════════════════════════════════════════════════════
 # 1. WCZYTYWANIE DANYCH
 # ══════════════════════════════════════════════════════════════════════════════════
+
 
 def load_parsed_jsons(parsed_dir: Path) -> list[dict]:
     records = []
@@ -97,6 +108,7 @@ def is_inne(label: str) -> bool:
 # 2. ZBIERANIE STATYSTYK
 # ══════════════════════════════════════════════════════════════════════════════════
 
+
 def collect_stats(records: list[dict], attachments_dir: Path) -> dict:
     stats = {
         "total_offers": len(records),
@@ -146,7 +158,7 @@ def collect_stats(records: list[dict], attachments_dir: Path) -> dict:
                 stats["ext_sizes_kb"][ext_label].append(size_kb)
                 stats["all_att_sizes_kb"].append(size_kb)
 
-            if att.get("is_zip") and att.get("extracted_status") not in ("success",):
+            if att.get("is_zip") and att.get("extracted_status") != "success":
                 stats["zip_not_extracted"] += 1
 
     if attachments_dir.exists():
@@ -180,6 +192,7 @@ def collect_stats(records: list[dict], attachments_dir: Path) -> dict:
 # 3. HELPERS DO GRUPOWANIA "inne"
 # ══════════════════════════════════════════════════════════════════════════════════
 
+
 def merge_inne_counter(counter: Counter) -> Counter:
     """Scala wszystkie 'inne (...)' w jeden klucz 'inne'."""
     merged = Counter()
@@ -210,6 +223,7 @@ def inne_detail_lines(counter: Counter) -> list[str]:
 # 4. WYKRESY
 # ══════════════════════════════════════════════════════════════════════════════════
 
+
 def fmt_size(kb: float) -> str:
     if kb >= 1024:
         return f"{kb / 1024:.1f} MB"
@@ -225,18 +239,15 @@ def plot_all(stats: dict):
 
     # Zgrupowane wersje liczników (inne(*) → inne)
     merged_counter = merge_inne_counter(stats["ext_counter"])
-    merged_sizes   = merge_inne_sizes(stats["ext_sizes_kb"])
+    merged_sizes = merge_inne_sizes(stats["ext_sizes_kb"])
 
     # Szczegóły "inne" do wyświetlenia na dole
     inne_lines = inne_detail_lines(stats["ext_counter"])
 
     fig = plt.figure(figsize=(20, 26), facecolor=BG)
-    fig.suptitle("Analiza zebranych przetargów", fontsize=22, fontweight="bold",
-                 color=TEXT, y=0.99)
+    fig.suptitle("Analiza zebranych przetargów", fontsize=22, fontweight="bold", color=TEXT, y=0.99)
 
-    gs = GridSpec(5, 2, figure=fig, hspace=0.48, wspace=0.35,
-                  top=0.97, bottom=0.02, left=0.07, right=0.97,
-                  height_ratios=[1.1, 1.8, 1.8, 1.8, 0.6])
+    gs = GridSpec(5, 2, figure=fig, hspace=0.48, wspace=0.35, top=0.97, bottom=0.02, left=0.07, right=0.97, height_ratios=[1.1, 1.8, 1.8, 1.8, 0.6])
 
     # ── KPI cards ───────────────────────────────────────────────────────────────
     ax_kpi = fig.add_subplot(gs[0, :])
@@ -256,34 +267,42 @@ def plot_all(stats: dict):
     n = len(kpis)
     for i, (label, value) in enumerate(kpis):
         x = i / n
-        rect = plt.Rectangle((x + 0.005, 0.05), 1 / n - 0.015, 0.9,
-                               facecolor=CARD, edgecolor="#CBD5E1",
-                               linewidth=1.2, transform=ax_kpi.transAxes,
-                               clip_on=False)
+        rect = plt.Rectangle(
+            (x + 0.005, 0.05), 1 / n - 0.015, 0.9, facecolor=CARD, edgecolor="#CBD5E1", linewidth=1.2, transform=ax_kpi.transAxes, clip_on=False
+        )
         ax_kpi.add_patch(rect)
-        ax_kpi.text(x + 1 / n / 2, 0.65, value,
-                    ha="center", va="center", fontsize=15, fontweight="bold",
-                    color=PALETTE[i % len(PALETTE)], transform=ax_kpi.transAxes)
-        ax_kpi.text(x + 1 / n / 2, 0.22, label,
-                    ha="center", va="center", fontsize=8, color=SUBTEXT,
-                    transform=ax_kpi.transAxes)
+        ax_kpi.text(
+            x + 1 / n / 2,
+            0.65,
+            value,
+            ha="center",
+            va="center",
+            fontsize=15,
+            fontweight="bold",
+            color=PALETTE[i % len(PALETTE)],
+            transform=ax_kpi.transAxes,
+        )
+        ax_kpi.text(x + 1 / n / 2, 0.22, label, ha="center", va="center", fontsize=8, color=SUBTEXT, transform=ax_kpi.transAxes)
 
     # ── Wykres kołowy: typy plików (inne zgrupowane) ────────────────────────────
     ax_pie = fig.add_subplot(gs[1, 0])
     sorted_pairs = sorted(merged_counter.items(), key=lambda x: -x[1])
-    pie_labels, pie_vals = zip(*sorted_pairs) if sorted_pairs else ([], [])
+    pie_labels, pie_vals = zip(*sorted_pairs, strict=True) if sorted_pairs else ([], [])
 
     if pie_vals:
         colors = [PALETTE[i % len(PALETTE)] for i in range(len(pie_labels))]
         wedges, _, autotexts = ax_pie.pie(
-            pie_vals, labels=None, autopct="%1.1f%%", colors=colors,
-            startangle=140, pctdistance=0.78,
-            wedgeprops={"edgecolor": "white", "linewidth": 1.5}
+            pie_vals,
+            labels=None,
+            autopct="%1.1f%%",
+            colors=colors,
+            startangle=140,
+            pctdistance=0.78,
+            wedgeprops={"edgecolor": "white", "linewidth": 1.5},
         )
         for at in autotexts:
             at.set_fontsize(8)
-        ax_pie.legend(wedges, pie_labels, loc="center left",
-                      bbox_to_anchor=(1.0, 0.5), fontsize=9, frameon=False)
+        ax_pie.legend(wedges, pie_labels, loc="center left", bbox_to_anchor=(1.0, 0.5), fontsize=9, frameon=False)
     ax_pie.set_title("Typy plików (pobrane + z ZIPów)", fontsize=13, fontweight="bold", pad=12)
 
     # ── Histogram: liczba załączników na ofertę ─────────────────────────────────
@@ -291,10 +310,8 @@ def plot_all(stats: dict):
     if att_counts:
         max_count = max(att_counts)
         bins = range(0, max_count + 2)
-        ax_hist.hist(att_counts, bins=bins, color=PALETTE[0], edgecolor="white",
-                     linewidth=0.8, rwidth=0.85, align="left")
-        ax_hist.axvline(avg_atts, color=PALETTE[2], linestyle="--",
-                        linewidth=1.5, label=f"Średnia: {avg_atts:.1f}")
+        ax_hist.hist(att_counts, bins=bins, color=PALETTE[0], edgecolor="white", linewidth=0.8, rwidth=0.85, align="left")
+        ax_hist.axvline(avg_atts, color=PALETTE[2], linestyle="--", linewidth=1.5, label=f"Średnia: {avg_atts:.1f}")
         ax_hist.legend(fontsize=9, frameon=False)
     ax_hist.set_xlabel("Liczba załączników")
     ax_hist.set_ylabel("Liczba ofert")
@@ -305,13 +322,10 @@ def plot_all(stats: dict):
     ax_src = fig.add_subplot(gs[2, 0])
     if stats["source_counter"]:
         src_items = stats["source_counter"].most_common()
-        src_labels, src_vals = zip(*src_items)
-        bars = ax_src.barh(src_labels, src_vals,
-                           color=[PALETTE[i % len(PALETTE)] for i in range(len(src_labels))],
-                           edgecolor="white", linewidth=0.8)
-        for bar, val in zip(bars, src_vals):
-            ax_src.text(bar.get_width() + 0.3, bar.get_y() + bar.get_height() / 2,
-                        str(val), va="center", fontsize=9, color=TEXT)
+        src_labels, src_vals = zip(*src_items, strict=True)
+        bars = ax_src.barh(src_labels, src_vals, color=[PALETTE[i % len(PALETTE)] for i in range(len(src_labels))], edgecolor="white", linewidth=0.8)
+        for bar, val in zip(bars, src_vals, strict=True):
+            ax_src.text(bar.get_width() + 0.3, bar.get_y() + bar.get_height() / 2, str(val), va="center", fontsize=9, color=TEXT)
     ax_src.set_xlabel("Liczba ofert")
     ax_src.set_title("Źródła ofert", fontsize=13, fontweight="bold")
     ax_src.invert_yaxis()
@@ -320,20 +334,14 @@ def plot_all(stats: dict):
     ax_size = fig.add_subplot(gs[2, 1])
     sizes_no_inne = {k: v for k, v in merged_sizes.items() if k != "inne"}
     if sizes_no_inne:
-        size_items = sorted(
-            ((ext, np.mean(sizes)) for ext, sizes in sizes_no_inne.items()),
-            key=lambda x: x[1], reverse=True
-        )
-        size_labels, size_means = zip(*size_items)
+        size_items = sorted(((ext, np.mean(sizes)) for ext, sizes in sizes_no_inne.items()), key=lambda x: x[1], reverse=True)
+        size_labels, size_means = zip(*size_items, strict=True)
         bars = ax_size.barh(
-            size_labels, size_means,
-            color=[PALETTE[i % len(PALETTE)] for i in range(len(size_labels))],
-            edgecolor="white", linewidth=0.8
+            size_labels, size_means, color=[PALETTE[i % len(PALETTE)] for i in range(len(size_labels))], edgecolor="white", linewidth=0.8
         )
         unit = "MB" if any(s >= 1024 for s in size_means) else "KB"
-        for bar, val_kb in zip(bars, size_means):
-            ax_size.text(bar.get_width() + 0.005, bar.get_y() + bar.get_height() / 2,
-                         fmt_size(val_kb), va="center", fontsize=8.5, color=TEXT)
+        for bar, val_kb in zip(bars, size_means, strict=True):
+            ax_size.text(bar.get_width() + 0.005, bar.get_y() + bar.get_height() / 2, fmt_size(val_kb), va="center", fontsize=8.5, color=TEXT)
         ax_size.set_xlabel(f"Średni rozmiar ({unit})")
         ax_size.set_title("""Śr. waga pliku wg typu\n(bez kategorii „inne”)""", fontsize=13, fontweight="bold")
         ax_size.invert_yaxis()
@@ -341,20 +349,12 @@ def plot_all(stats: dict):
     # ── Słupkowy: łączna waga wg typu (inne zgrupowane) ─────────────────────────
     ax_total = fig.add_subplot(gs[3, 0])
     if merged_sizes:
-        total_items = sorted(
-            ((ext, sum(sizes)) for ext, sizes in merged_sizes.items()),
-            key=lambda x: x[1], reverse=True
-        )
-        t_labels, t_vals_kb = zip(*total_items)
+        total_items = sorted(((ext, sum(sizes)) for ext, sizes in merged_sizes.items()), key=lambda x: x[1], reverse=True)
+        t_labels, t_vals_kb = zip(*total_items, strict=True)
         t_vals_mb = [v / 1024 for v in t_vals_kb]
-        bars = ax_total.barh(
-            t_labels, t_vals_mb,
-            color=[PALETTE[i % len(PALETTE)] for i in range(len(t_labels))],
-            edgecolor="white", linewidth=0.8
-        )
-        for bar, val_kb in zip(bars, t_vals_kb):
-            ax_total.text(bar.get_width() + 0.005, bar.get_y() + bar.get_height() / 2,
-                          fmt_size(val_kb), va="center", fontsize=8.5, color=TEXT)
+        bars = ax_total.barh(t_labels, t_vals_mb, color=[PALETTE[i % len(PALETTE)] for i in range(len(t_labels))], edgecolor="white", linewidth=0.8)
+        for bar, val_kb in zip(bars, t_vals_kb, strict=True):
+            ax_total.text(bar.get_width() + 0.005, bar.get_y() + bar.get_height() / 2, fmt_size(val_kb), va="center", fontsize=8.5, color=TEXT)
         ax_total.set_xlabel("Łączny rozmiar (MB)")
         ax_total.set_title("Łączna waga plików wg typu (pobrane + z ZIPów)", fontsize=13, fontweight="bold")
         ax_total.invert_yaxis()
@@ -365,19 +365,25 @@ def plot_all(stats: dict):
 
     mismatches = stats["id_mismatches"]
     if not mismatches:
-        ax_tbl.text(0.5, 0.5, "✓  Brak niezgodności ID ↔ nazwa pliku JSON",
-                    ha="center", va="center", fontsize=12,
-                    color="#16A34A", fontweight="bold",
-                    transform=ax_tbl.transAxes)
+        ax_tbl.text(
+            0.5,
+            0.5,
+            "✓  Brak niezgodności ID ↔ nazwa pliku JSON",
+            ha="center",
+            va="center",
+            fontsize=12,
+            color="#16A34A",
+            fontweight="bold",
+            transform=ax_tbl.transAxes,
+        )
     else:
         show = mismatches[:10]
         table_data = [["ID w JSON", "Nazwa pliku"]] + [[a, b] for a, b in show]
-        tbl = ax_tbl.table(cellText=table_data[1:], colLabels=table_data[0],
-                            loc="center", cellLoc="left")
+        tbl = ax_tbl.table(cellText=table_data[1:], colLabels=table_data[0], loc="center", cellLoc="left")
         tbl.auto_set_font_size(False)
         tbl.set_fontsize(8)
         tbl.scale(1, 1.4)
-        for (r, c), cell in tbl.get_celld().items():
+        for (r, _c), cell in tbl.get_celld().items():
             cell.set_edgecolor("#E2E8F0")
             if r == 0:
                 cell.set_facecolor("#EFF6FF")
@@ -385,19 +391,15 @@ def plot_all(stats: dict):
             else:
                 cell.set_facecolor(CARD)
         if len(mismatches) > 10:
-            ax_tbl.text(0.5, 0.02, f"... i {len(mismatches) - 10} więcej",
-                        ha="center", fontsize=8, color=SUBTEXT,
-                        transform=ax_tbl.transAxes)
-    ax_tbl.set_title("Spójność ID ↔ nazwa pliku JSON", fontsize=13,
-                     fontweight="bold", pad=10)
+            ax_tbl.text(0.5, 0.02, f"... i {len(mismatches) - 10} więcej", ha="center", fontsize=8, color=SUBTEXT, transform=ax_tbl.transAxes)
+    ax_tbl.set_title("Spójność ID ↔ nazwa pliku JSON", fontsize=13, fontweight="bold", pad=10)
 
     # ── Panel dolny: szczegóły kategorii "inne" ─────────────────────────────────
     ax_inne = fig.add_subplot(gs[4, :])
     ax_inne.axis("off")
 
     # Tło karty
-    rect = plt.Rectangle((0, 0), 1, 1, facecolor=CARD, edgecolor="#CBD5E1",
-                           linewidth=1.2, transform=ax_inne.transAxes, clip_on=False)
+    rect = plt.Rectangle((0, 0), 1, 1, facecolor=CARD, edgecolor="#CBD5E1", linewidth=1.2, transform=ax_inne.transAxes, clip_on=False)
     ax_inne.add_patch(rect)
 
     if inne_lines:
@@ -407,10 +409,7 @@ def plot_all(stats: dict):
     else:
         full_text = '✓  Brak plików w kategorii „inne"'
 
-    ax_inne.text(0.5, 0.55, full_text,
-                 ha="center", va="center", fontsize=9,
-                 color=TEXT, transform=ax_inne.transAxes,
-                 wrap=True)
+    ax_inne.text(0.5, 0.55, full_text, ha="center", va="center", fontsize=9, color=TEXT, transform=ax_inne.transAxes, wrap=True)
 
     out_dir = BASE_DIR / "analysis_output"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -423,6 +422,7 @@ def plot_all(stats: dict):
 # ══════════════════════════════════════════════════════════════════════════════════
 # 5. MAIN
 # ══════════════════════════════════════════════════════════════════════════════════
+
 
 def main():
     if not PARSED_DIR.exists():
