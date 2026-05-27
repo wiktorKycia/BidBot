@@ -36,7 +36,7 @@ if user_input := st.chat_input("Zadaj pytanie o przetargi..."):
         if msg["role"] == "user":
             # Search for the subsequent assistant response
             assistant_content = ""
-            for next_msg in history_messages[idx + 1:]:
+            for next_msg in history_messages[idx + 1 :]:
                 if next_msg["role"] == "assistant":
                     assistant_content = next_msg["content"]
                     break
