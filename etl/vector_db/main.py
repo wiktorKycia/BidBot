@@ -25,8 +25,8 @@ OPENAI_API_KEY = require_openai_api_key()
 
 MODEL_EMBEDDINGS = "text-embedding-3-small"
 
-CHROMA_DB_PATH = Path("chroma_langchain_db")
-TAGS_PATH = BASE_DIR / "etl" / "ketword_tagger" / "tags.json"
+CHROMA_DB_PATH = BASE_DIR / "etl" / "vector_db" / "chroma_langchain_db"
+TAGS_PATH = BASE_DIR / "etl" / "keyword_tagger" / "tags.json"
 
 try:
     _tags_data = asyncio.run(read_json(TAGS_PATH))
