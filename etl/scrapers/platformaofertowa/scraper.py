@@ -324,8 +324,24 @@ def _extract_zip_sync(filepath: Path, extract_to: Path) -> str:
             return "corrupted_archive"
 
         extract_to.mkdir(parents=True, exist_ok=True)
+        base_dir = extract_to.resolve()
         with zipfile.ZipFile(filepath, "r") as zip_ref:
-            zip_ref.extractall(extract_to)
+            for member in zip_ref.infolist():
+                member_path = Path(member.filename.replace("\\", "/"))
+                if member_path.is_absolute():
+                    raise ValueError(f"Niebezpieczna ścieżka w archiwum ZIP: {member.filename}")
+
+                destination = (base_dir / member_path).resolve()
+                if destination != base_dir and base_dir not in destination.parents:
+                    raise ValueError(f"Niebezpieczna ścieżka w archiwum ZIP: {member.filename}")
+
+                if member.is_dir():
+                    destination.mkdir(parents=True, exist_ok=True)
+                    continue
+
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                with zip_ref.open(member, "r") as source, destination.open("wb") as target:
+                    target.write(source.read())
 
         logger.info(f"Pomyślnie rozpakowano archiwum: {filepath.name} -> {extract_to.name}/")
         return "success"
@@ -335,6 +351,8 @@ def _extract_zip_sync(filepath: Path, extract_to: Path) -> str:
     except Exception as e:
         logger.error(f"Nieoczekiwany błąd podczas rozpakowywania {filepath.name}: {e}")
         return f"error: {str(e)}"
+    finally:
+        filepath.unlink(missing_ok=True)
 
 
 async def check_page_exists(session: aiohttp.ClientSession, page: int) -> bool:
@@ -471,7 +489,7 @@ async def process_single_notice(
 
     if extraction_tasks:
         extraction_results = await asyncio.gather(*extraction_tasks, return_exceptions=True)
-        for idx, res in zip(extraction_indices, extraction_results, strict=False):
+        for idx, res in zip(extraction_indices, extraction_results, strict=True):
             if isinstance(res, Exception):
                 formatted_attachments[idx]["extracted_status"] = f"exception: {str(res)}"
             else:
