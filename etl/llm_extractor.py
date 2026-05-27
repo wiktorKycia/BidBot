@@ -15,8 +15,8 @@ from google import genai
 from google.genai.errors import ClientError
 from pydantic import BaseModel, Field
 
-from etl.scrapers.settings import ATTACHMENTS_DIR, BASE_DIR
 from etl.loggers import setup_logging
+from etl.scrapers.settings import ATTACHMENTS_DIR, BASE_DIR
 
 load_dotenv(BASE_DIR / ".env")
 setup_logging()
@@ -178,6 +178,7 @@ def extract_tender_data(context_text: str) -> TenderData | None:
 def main(base_dir: Path = ATTACHMENTS_DIR):
     # Initialize database tables
     from etl.postgres_saver import create_tables
+
     try:
         create_tables()
     except Exception as db_err:
@@ -213,9 +214,10 @@ def main(base_dir: Path = ATTACHMENTS_DIR):
                 if tender_json_obj:
                     logger.info(f"Pomyślnie wyciągnięto dane dla przetargu: {tender_dir.name}")
                     logger.info(f"WYNIK - JSON ({tender_dir.name}):\n{tender_json_obj.model_dump_json(indent=2)}")
-                    
+
                     # Save extracted structured data to PostgreSQL
                     from etl.postgres_saver import save_llm_data
+
                     if save_llm_data(tender_dir.name, tender_json_obj):
                         logger.info(f"Pomyślnie zapisano dane LLM do bazy PostgreSQL dla przetargu: {tender_dir.name}")
                     else:

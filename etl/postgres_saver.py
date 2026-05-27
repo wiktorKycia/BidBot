@@ -1,12 +1,13 @@
+# ruff: noqa: W291
 import json
 import logging
 import os
 from pathlib import Path
+
 import psycopg2
 
 logger = logging.getLogger(__name__)
 
-# Postgres Connection Parameters
 DB_HOST = os.getenv("DB_HOST", "localhost")
 DB_PORT = os.getenv("DB_PORT", "5432")
 DB_NAME = os.getenv("DB_NAME", "bidbot")
@@ -16,13 +17,7 @@ DB_PASSWORD = os.getenv("DB_PASSWORD", "postgres")
 
 def get_connection():
     """Establishes and returns a connection to the PostgreSQL database."""
-    return psycopg2.connect(
-        host=DB_HOST,
-        port=DB_PORT,
-        dbname=DB_NAME,
-        user=DB_USER,
-        password=DB_PASSWORD
-    )
+    return psycopg2.connect(host=DB_HOST, port=DB_PORT, dbname=DB_NAME, user=DB_USER, password=DB_PASSWORD)
 
 
 def create_tables():
@@ -90,7 +85,7 @@ def create_tables():
             tag TEXT,
             PRIMARY KEY (tender_id, tag)
         );
-        """
+        """,
     ]
     conn = get_connection()
     try:
@@ -109,7 +104,6 @@ def save_tender_json(data: dict):
     conn = get_connection()
     try:
         with conn.cursor() as cur:
-            # 1. Upsert main tenders row
             tender_id = data["id"]
             title = data.get("title")
             description = data.get("description")
@@ -119,7 +113,7 @@ def save_tender_json(data: dict):
             created_at = data.get("createdAt")
             publication_date = data.get("publicationDate")
             submitting_offers_deadline = data.get("submittingOffersDeadline")
-            
+
             enrichment = data.get("enrichment", {}) or {}
             industry = enrichment.get("industry")
             nuts3 = enrichment.get("nuts3", [])
@@ -144,11 +138,22 @@ def save_tender_json(data: dict):
                     nuts3 = EXCLUDED.nuts3,
                     cpv_codes = EXCLUDED.cpv_codes;
                 """,
-                (tender_id, title, description, reference_number, contract_nature, scraper_url, 
-                 created_at, publication_date, submitting_offers_deadline, industry, nuts3, cpv_codes)
+                (
+                    tender_id,
+                    title,
+                    description,
+                    reference_number,
+                    contract_nature,
+                    scraper_url,
+                    created_at,
+                    publication_date,
+                    submitting_offers_deadline,
+                    industry,
+                    nuts3,
+                    cpv_codes,
+                ),
             )
 
-            # 2. Insert tags
             tags = enrichment.get("tags", [])
             if tags:
                 for tag in tags:
@@ -158,24 +163,22 @@ def save_tender_json(data: dict):
                         VALUES (%s, %s)
                         ON CONFLICT DO NOTHING;
                         """,
-                        (tender_id, tag)
+                        (tender_id, tag),
                     )
 
-            # 3. Insert issuers and relationship
             issuers = data.get("issuers", [])
             if issuers:
                 for issuer in issuers:
                     iss_title = issuer.get("title")
                     if not iss_title:
                         continue
-                    
+
                     addr = issuer.get("address", {}) or {}
                     street = addr.get("street")
                     city = addr.get("city")
                     postal_code = addr.get("postalCode")
                     country = addr.get("country")
 
-                    # Upsert issuer
                     cur.execute(
                         """
                         INSERT INTO issuers (title, street, city, postal_code, country)
@@ -187,21 +190,19 @@ def save_tender_json(data: dict):
                             country = EXCLUDED.country
                         RETURNING id;
                         """,
-                        (iss_title, street, city, postal_code, country)
+                        (iss_title, street, city, postal_code, country),
                     )
                     issuer_id = cur.fetchone()[0]
 
-                    # Link with tender
                     cur.execute(
                         """
                         INSERT INTO tender_issuers (tender_id, issuer_id)
                         VALUES (%s, %s)
                         ON CONFLICT DO NOTHING;
                         """,
-                        (tender_id, issuer_id)
+                        (tender_id, issuer_id),
                     )
 
-            # 4. Insert scraper attachments
             attachments = data.get("scraper_attachments", [])
             if attachments:
                 for att in attachments:
@@ -223,7 +224,7 @@ def save_tender_json(data: dict):
                             is_zip = EXCLUDED.is_zip,
                             extracted_status = EXCLUDED.extracted_status;
                         """,
-                        (tender_id, url, filename, local_path, downloaded, is_zip, extracted_status)
+                        (tender_id, url, filename, local_path, downloaded, is_zip, extracted_status),
                     )
 
         conn.commit()
@@ -274,8 +275,8 @@ def save_llm_data(tender_id: str, tender_data) -> bool:
                     data.get("kryteria_oceny", []),
                     data.get("wymagane_dokumenty", []),
                     data.get("ryzyka", []),
-                    tender_id
-                )
+                    tender_id,
+                ),
             )
         conn.commit()
         return True
