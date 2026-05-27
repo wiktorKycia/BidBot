@@ -88,7 +88,7 @@ def chat_with_bot(request: ChatRequest):
         return ChatResponse(answer=bot_answer)
     except Exception as e:
         ragemain.logger.exception(f"Krytyczny błąd podczas wywołania czatu: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
 @app.get("/health")
