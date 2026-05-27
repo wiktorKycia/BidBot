@@ -283,7 +283,6 @@ def plan_search(question: str, conversation_history: list[dict[str, str]]) -> Re
                 "search_query": search_query,
                 "keywords": keywords,
                 "offer_ids": list(offer_ids),
-                "excluded_offer_ids": excluded_offer_ids,
                 "top_k": top_k,
                 "warning": bool(plan.warning),
             }
@@ -457,8 +456,6 @@ def hybrid_retrieve(question: str, conversation_history: list[dict[str, str]]) -
     seen_texts: set[str] = set()
 
     for record in exact_matches:
-        if record.offer_id in plan.excluded_offer_ids:
-            continue
         if record.raw_text not in seen_texts:
             seen_texts.add(record.raw_text)
             combined.append(record)
@@ -466,8 +463,6 @@ def hybrid_retrieve(question: str, conversation_history: list[dict[str, str]]) -
     for record in semantic_matches:
         if len(combined) >= plan.top_k:
             break
-        if record.offer_id in plan.excluded_offer_ids:
-            continue
         if record.raw_text not in seen_texts:
             seen_texts.add(record.raw_text)
             combined.append(record)
