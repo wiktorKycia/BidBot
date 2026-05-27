@@ -53,14 +53,14 @@ class OfferSummary(BaseModel):
     Used for structured output formatting when presenting document summaries to the LLM.
 
     Attributes:
-        offer_id: Unique transaction ID for the public tender.
+        offer_id: Unique offer ID for the public tender.
         title: Title of the offer.
         source_url: URL to the original offer source.
         tags: List of categorization tags associated with the offer.
         short_description: Brief excerpt from the offer description (truncated).
     """
 
-    offer_id: str = Field(description="Transaction ID of the offer")
+    offer_id: str = Field(description="Offer ID of the offer")
     title: str = Field(description="Title of the offer")
     source_url: str = Field(description="URL to the offer source")
     tags: list[str] = Field(description="Tags associated with the offer", default_factory=list)

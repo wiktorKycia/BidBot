@@ -214,7 +214,7 @@ def load_data(vector_store: Chroma, load_data_strategy: LoadDataStrategy = LoadD
 
     Args:
         vector_store: The Chroma vector store to load into.
-        load_data_strategy: Strategy for loading documents (default: AddNew).
+        load_data_strategy: Strategy for loading documents (default: OldDataOnly).
 
     Returns:
         A list of all documents in the system (newly added and/or existing).
