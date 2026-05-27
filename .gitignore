@@ -6,4 +6,3 @@ data*/
 .env
 logs
 chroma_langchain_db*
-tags.json
