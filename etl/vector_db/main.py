@@ -14,8 +14,7 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 from etl.llms import MODEL, require_openai_api_key
 from etl.loggers import setup_logging
-from etl.scrapers.settings import BASE_DIR
-from etl.utils import read_json
+from etl.settings import TAGS_PATH, CHROMA_DB_PATH
 from etl.vector_db.models import IndexedDocument, LoadDataStrategy, OfferSummary, RetrievalPlan
 from etl.vector_db.prompts import main_system_message_template, use_search_system_message_template
 from etl.vector_db.vector_saver import load_data
@@ -24,12 +23,10 @@ OPENAI_API_KEY = require_openai_api_key()
 
 MODEL_EMBEDDINGS = "text-embedding-3-small"
 
-CHROMA_DB_PATH = BASE_DIR / "etl" / "vector_db" / "chroma_langchain_db"
-TAGS_PATH = BASE_DIR / "etl" / "keyword_tagger" / "tags.json"
-
 try:
-    _tags_data = asyncio.run(read_json(TAGS_PATH))
-    TAGS_STR = ", ".join(_tags_data.get("tags", [])) if isinstance(_tags_data, dict) else ""
+    with open(TAGS_PATH, "r") as f:
+        _tags_data: dict = json.loads(f.read())
+        TAGS_STR = ", ".join(_tags_data.get("tags", [])) if isinstance(_tags_data, dict) else ""
 except Exception:
     TAGS_STR = ""
 
@@ -576,7 +573,8 @@ if __name__ == "__main__":
     llm = ChatOpenAI(model=MODEL)
     embeddings = OpenAIEmbeddings(model=MODEL_EMBEDDINGS)
 
-    vector_store = Chroma(collection_name=os.getenv("CHROMA_COLLECTION_NAME", "bid_info_json"), embedding_function=embeddings, persist_directory=str(CHROMA_DB_PATH))
+    vector_store = Chroma(collection_name=os.getenv("CHROMA_COLLECTION_NAME", "bid_info_json"), embedding_function=embeddings,
+                          persist_directory=str(CHROMA_DB_PATH))
 
     strategy_name = os.getenv("LOAD_DATA_STRATEGY", "OldDataOnly")
     try:
