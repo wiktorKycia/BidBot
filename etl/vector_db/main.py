@@ -5,7 +5,6 @@ import os
 import re
 from collections import defaultdict
 from operator import itemgetter
-from pathlib import Path
 from typing import Any
 
 from langchain_chroma import Chroma
