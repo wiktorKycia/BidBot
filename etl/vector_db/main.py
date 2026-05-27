@@ -576,7 +576,7 @@ if __name__ == "__main__":
     llm = ChatOpenAI(model=MODEL)
     embeddings = OpenAIEmbeddings(model=MODEL_EMBEDDINGS)
 
-    vector_store = Chroma(collection_name="bid_info", embedding_function=embeddings, persist_directory=str(CHROMA_DB_PATH))
+    vector_store = Chroma(collection_name=os.getenv("CHROMA_COLLECTION_NAME", "bid_info_json"), embedding_function=embeddings, persist_directory=str(CHROMA_DB_PATH))
 
     strategy_name = os.getenv("LOAD_DATA_STRATEGY", "OldDataOnly")
     try:

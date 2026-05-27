@@ -16,6 +16,10 @@ from etl.loggers import setup_logging
 from etl.vector_db.main import ask, build_indexed_document
 from etl.vector_db.models import LoadDataStrategy
 from etl.vector_db.vector_saver import load_data
+from dotenv import load_dotenv
+
+DOTENV_PATH = Path(__file__).resolve().parent / ".env"
+load_dotenv(DOTENV_PATH)
 
 
 class ChatRequest(BaseModel):
@@ -33,7 +37,8 @@ BASE_DIR = Path(__file__).resolve().parent
 CHROMA_DB_PATH = BASE_DIR / "etl" / "vector_db" / "chroma_langchain_db"
 
 embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
-vector_store = Chroma(collection_name="bid_info_json", embedding_function=embeddings, persist_directory=str(CHROMA_DB_PATH))
+vector_store = Chroma(collection_name=os.getenv("CHROMA_COLLECTION_NAME", "bid_info_json"), embedding_function=embeddings, persist_directory=str(
+    CHROMA_DB_PATH))
 
 
 try:
@@ -88,7 +93,7 @@ def chat_with_bot(request: ChatRequest):
         return ChatResponse(answer=bot_answer)
     except Exception as e:
         ragemain.logger.exception(f"Krytyczny błąd podczas wywołania czatu: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error") from e
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.get("/health")
