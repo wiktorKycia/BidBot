@@ -1,8 +1,13 @@
 .venv/
+venv/
 .git/
 .idea/
 .ruff_cache/
 __pycache__/
+data*/
 logs/
-data/
-etl/vector_db/chroma_langchain_db/
+etl/vector_db/chroma_langchain_db*/
+analysis_output/
+*.sqlite3
+*.sqlite3-journal
+
