@@ -21,6 +21,7 @@ from etl.vector_db.models import IndexedDocument, LoadDataStrategy, OfferSummary
 from etl.vector_db.prompts import main_system_message_template, use_search_system_message_template
 from etl.vector_db.vector_saver import load_data
 
+logger = logging.getLogger("vector_db")
 OPENAI_API_KEY = require_openai_api_key()
 
 MODEL_EMBEDDINGS = "text-embedding-3-small"
@@ -454,11 +455,12 @@ def merge_tender_data(tender_id: str, attachment_chunks: list[str] = None) -> Me
         except Exception:
             pass
             
-    json_tags = tender_json.get("enrichment", {}).get("tags", []) if isinstance(tender_json.get("enrichment"), dict) else []
+    enrichment = tender_json.get("enrichment") or {}
+    json_tags = enrichment.get("tags") or []
     merged_tags = list(set(sql_tags + json_tags))
     
     sql_nuts3 = tender_sql.nuts3 if (tender_sql and tender_sql.nuts3) else []
-    json_nuts3 = tender_json.get("enrichment", {}).get("nuts3", []) if isinstance(tender_json.get("enrichment"), dict) else []
+    json_nuts3 = enrichment.get("nuts3") or []
     merged_nuts3 = list(set(sql_nuts3 + json_nuts3))
     
     sql_cpv = tender_sql.cpv_codes if (tender_sql and tender_sql.cpv_codes) else []
@@ -475,7 +477,7 @@ def merge_tender_data(tender_id: str, attachment_chunks: list[str] = None) -> Me
         created_at=str(tender_sql.created_at) if (tender_sql and tender_sql.created_at) else (tender_json.get("createdAt") or ""),
         publication_date=str(tender_sql.publication_date) if (tender_sql and tender_sql.publication_date) else (tender_json.get("publicationDate") or ""),
         submitting_offers_deadline=str(tender_sql.submitting_offers_deadline) if (tender_sql and tender_sql.submitting_offers_deadline) else (tender_json.get("submittingOffersDeadline") or ""),
-        industry=tender_sql.industry if (tender_sql and tender_sql.industry) else (tender_json.get("enrichment", {}).get("industry") if isinstance(tender_json.get("enrichment"), dict) else ""),
+        industry=tender_sql.industry if (tender_sql and tender_sql.industry) else (enrichment.get("industry") or ""),
         nuts3=merged_nuts3,
         cpv_codes=merged_cpv,
         tags=merged_tags,
@@ -528,12 +530,32 @@ def format_merged_tender(record: MergedTender, detailed: bool = False) -> str:
         lines.append(record.description)
         return "\n".join(lines)
 
+    desc_parts = []
+    if record.llm_extracted:
+        desc_parts.append(f"Tytuł: {record.llm_tytul}")
+        desc_parts.append(f"Zamawiający: {record.llm_zamawiajacy}")
+        desc_parts.append(f"Budżet: {record.llm_budzet}")
+        desc_parts.append(f"Termin składania: {record.llm_deadline}")
+        desc_parts.append(f"Miejsce realizacji: {record.llm_miejsce_realizacji}")
+        if record.llm_wymagania_techniczne:
+            desc_parts.append(f"Kluczowe wymagania: {'; '.join(record.llm_wymagania_techniczne)}")
+    
+    if record.attachment_chunks:
+        desc_parts.append("Kluczowe fragmenty z dokumentów:")
+        for chunk in record.attachment_chunks[:3]:
+            desc_parts.append(f"  - {chunk.strip()}")
+            
+    if not desc_parts:
+        desc_parts.append(record.description or "")
+        
+    combined_desc = "\n".join(desc_parts)[:1500]
+
     summary = OfferSummary(
         offer_id=record.id,
         title=record.title or "unknown",
         source_url=record.scraper_url or "",
         tags=record.tags,
-        short_description=str(record.description or "")[:500] + "..."
+        short_description=combined_desc
     )
     return summary.model_dump_json(indent=2)
 
@@ -552,12 +574,8 @@ async def hybrid_retrieve(question: str, conversation_history: list[dict[str, st
             try:
                 attachment_chunks = []
                 try:
-                    kwargs = {
-                        "k": 10,
-                        "filter": {"offer_id": oid}
-                    }
-                    results = vector_store.similarity_search_with_relevance_scores("przetarg", **kwargs)
-                    attachment_chunks = [doc.page_content for doc, _ in results]
+                    results = vector_store.get(where={"offer_id": oid})
+                    attachment_chunks = results.get("documents", []) or []
                 except Exception as chroma_err:
                     logger.error(f"Chroma error during exact lookup for {oid}: {chroma_err}")
                 

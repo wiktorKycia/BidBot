@@ -278,11 +278,25 @@ def search_tenders_sql(search_query: str, limit: int = 5) -> list[Tender]:
         return []
     session = SessionLocal()
     try:
-        query_str = f"%{search_query}%"
+        from sqlalchemy import or_
+        terms = []
+        if "," in search_query:
+            terms = [t.strip() for t in search_query.split(",") if t.strip()]
+        else:
+            terms = [t.strip() for t in search_query.split() if t.strip()]
+            
+        if not terms:
+            return []
+            
+        clauses = []
+        for term in terms[:5]:
+            term_str = f"%{term}%"
+            clauses.append(Tender.title.ilike(term_str))
+            clauses.append(Tender.description.ilike(term_str))
+            clauses.append(TenderTag.tag.ilike(term_str))
+            
         return session.query(Tender).outerjoin(TenderTag).filter(
-            (Tender.title.ilike(query_str)) |
-            (Tender.description.ilike(query_str)) |
-            (TenderTag.tag.ilike(query_str))
+            or_(*clauses)
         ).distinct().limit(limit).all()
     finally:
         session.close()
