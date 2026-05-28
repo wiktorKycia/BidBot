@@ -1,6 +1,5 @@
-from pathlib import Path
+from etl.settings import BASE_DIR
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DATA_DIR = BASE_DIR / "data"
 RAW_DIR = DATA_DIR / "raw_html"
 PARSED_DIR = DATA_DIR / "parsed"
