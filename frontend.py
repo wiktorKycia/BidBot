@@ -71,8 +71,8 @@ with tab_chat:
 with tab_analysis:
     import json
     from pathlib import Path
-    from textwrap import fill
-    import matplotlib.pyplot as plt
+    import pandas as pd
+    import altair as alt
 
     st.header("Analiza Tagów")
     
@@ -97,62 +97,37 @@ with tab_analysis:
             sorted_industries.sort(key=lambda item: (-item[2], item[0].lower()))
             grouped = {ind: tags for ind, tags, _ in sorted_industries}
 
-            industries = list(grouped.keys())
-            totals = [sum(tags.values()) for tags in grouped.values()]
-            cmap = plt.get_cmap("tab20")
-            pie_colors = [cmap(i) for i in range(cmap.N)]
-
-            # Pie Chart
-            fig_pie, ax_pie = plt.subplots(figsize=(8, 6))
-            wedges, _, autotexts = ax_pie.pie(
-                totals,
-                labels=None,
-                autopct=lambda pct: f"{pct:.1f}%" if pct >= 2 else "",
-                startangle=90,
-                counterclock=False,
-                colors=[pie_colors[i % len(pie_colors)] for i in range(len(industries))],
-                wedgeprops={"linewidth": 1, "edgecolor": "white"},
-                textprops={"fontsize": 10},
+            # Pie / Donut Chart
+            pie_data = [{"Branża": ind, "Liczba": sum(tags.values())} for ind, tags in grouped.items()]
+            pie_df = pd.DataFrame(pie_data)
+            
+            pie_chart = (
+                alt.Chart(pie_df)
+                .mark_arc(innerRadius=40)
+                .encode(
+                    theta=alt.Theta("Liczba:Q"),
+                    color=alt.Color("Branża:N", sort=alt.EncodingSortField(field="Liczba", order="descending")),
+                    tooltip=["Branża", "Liczba"]
+                )
+                .properties(title="Udział tagów według branż")
             )
-            ax_pie.set_title("Udział tagów według branż")
-            ax_pie.axis("equal")
             
-            legend_labels = [f"{ind} — {tot}" for ind, tot in zip(industries, totals)]
-            ax_pie.legend(wedges, legend_labels, title="Branże", loc="center left", bbox_to_anchor=(1.0, 0.5), fontsize=9)
-            
-            st.pyplot(fig_pie)
+            st.altair_chart(pie_chart, use_container_width=True)
             st.divider()
 
             # Bar Charts
-            for row, (industry, tags) in enumerate(grouped.items()):
-                labels = [fill(tag, width=36) for tag in tags.keys()]
-                values = list(tags.values())
+            for industry, tags in grouped.items():
+                tags_data = [{"Tag": tag, "Liczba": count} for tag, count in tags.items()]
+                tags_df = pd.DataFrame(tags_data)
                 
-                height = max(3.0, 0.4 * len(tags))
-                fig_bar, ax = plt.subplots(figsize=(10, height))
-                bar_color = pie_colors[row % len(pie_colors)]
+                base_chart = alt.Chart(tags_df).encode(
+                    x=alt.X("Liczba:Q", title="Liczba wystąpień"),
+                    y=alt.Y("Tag:N", title="", sort=alt.EncodingSortField(field="Liczba", order="descending")),
+                    tooltip=["Tag", "Liczba"]
+                )
                 
-                bars = ax.barh(range(len(values)), values, color=bar_color, edgecolor="#1E293B", linewidth=0.4)
-                ax.set_yticks(range(len(values)))
-                ax.set_yticklabels(labels, fontsize=8)
-                ax.invert_yaxis()
-                ax.grid(axis="x", linestyle="--", alpha=0.3)
-                ax.set_axisbelow(True)
-
-                max_val = max(values) if values else 0
-                ax.set_xlim(0, max_val * 1.2 if max_val else 1)
-                ax.set_xlabel("Liczba wystąpień")
-                ax.set_title(f"{industry} — {sum(values)} tagów")
+                bar = base_chart.mark_bar()
+                text = base_chart.mark_text(align="left", baseline="middle", dx=3).encode(text="Liczba:Q")
                 
-                for bar, val in zip(bars, values):
-                    ax.text(
-                        bar.get_width() + (max_val * 0.01 if max_val else 0.5),
-                        bar.get_y() + bar.get_height() / 2,
-                        str(val),
-                        va="center",
-                        ha="left",
-                        fontsize=8,
-                        color="#0F172A",
-                    )
-                
-                st.pyplot(fig_bar)
+                chart = (bar + text).properties(title=f"{industry} — {sum(tags.values())} tagów")
+                st.altair_chart(chart, use_container_width=True)
