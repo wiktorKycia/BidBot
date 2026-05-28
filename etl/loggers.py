@@ -45,7 +45,7 @@ LOGGING_CONFIG = {
         "aiohttp": {"level": "WARNING"},
         "httpx": {"level": "WARNING"},
         "vector_db": {
-            "handlers": ["rotatingFile"],
+            "handlers": ["rotatingFile", "console"],
             "level": "DEBUG",
             "propagate": False,
         },
