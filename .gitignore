@@ -2,7 +2,9 @@
 .idea
 __pycache__
 
-data*/
+data_*/
+!data_[a-z]*/
+data/
 .env
 logs
 chroma_langchain_db*
