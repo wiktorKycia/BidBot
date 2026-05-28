@@ -259,7 +259,7 @@ def plan_search(question: str, conversation_history: list[dict[str, str]]) -> Re
     offer_ids = unique_strings(offer_ids)
 
     search_query = str(plan.search_query).strip()
-    if not search_query and not offer_ids:
+    if not search_query and not offer_ids and plan.needs_search:
         search_query = question.strip()
 
     needs_search = bool(plan.needs_search)
@@ -274,6 +274,9 @@ def plan_search(question: str, conversation_history: list[dict[str, str]]) -> Re
     excluded_offer_ids = [str(item) for item in plan.excluded_offer_ids if str(item).strip()]
     excluded_offer_ids = unique_strings(excluded_offer_ids)
     keywords = [str(kw).strip() for kw in plan.keywords if str(kw).strip()]
+
+    if not plan.needs_search and not plan.search_query and not plan.offer_ids and not plan.excluded_offer_ids and not plan.top_k:
+        plan.warning = True
 
     logger.debug(
         "retrieval_plan_final=%s",
