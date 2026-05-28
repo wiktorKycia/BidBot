@@ -24,7 +24,7 @@ from etl.utils import read_json, save_json
 setup_logging()
 logger = logging.getLogger(__name__)
 
-ROOT_DIR = Path(__file__).resolve().parent
+ROOT_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_INPUT = ROOT_DIR / "etl" / "keyword_tagger" / "tags.json"
 DEFAULT_JSON_OUTPUT = Path(__file__).resolve().parent / "analysis_output" / "tags_by_industries.json"
 DEFAULT_PNG_OUTPUT = Path(__file__).resolve().parent / "analysis_output" / "tags_by_industries.png"
@@ -111,8 +111,10 @@ def validate_grouping(source_counts: dict[str, int], grouped: dict[str, dict[str
 
 
 def build_llm() -> Any:
-    require_openai_api_key()
-    return ChatOpenAI(model=MODEL, temperature=0).with_structured_output(GroupedTagsOutput)
+    api_key = require_openai_api_key()
+    return ChatOpenAI(model=MODEL, api_key=lambda: api_key, temperature=0).with_structured_output(
+        GroupedTagsOutput, method="function_calling"
+    )
 
 
 async def group_tags_with_llm(tag_counts: dict[str, int], max_retries: int = 3) -> dict[str, dict[str, int]]:

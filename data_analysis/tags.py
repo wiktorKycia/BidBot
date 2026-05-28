@@ -10,7 +10,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-ROOT_DIR = Path(__file__).resolve().parents[1]
+ROOT_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_INPUT = ROOT_DIR / "etl" / "keyword_tagger" / "tags.json"
 DEFAULT_OUTPUT = Path(__file__).resolve().parent / "analysis_output" / "tags.png"
 
