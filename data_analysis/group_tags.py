@@ -1,4 +1,3 @@
-import argparse
 import asyncio
 import json
 import logging
@@ -37,10 +36,13 @@ SYSTEM_PROMPT = SystemMessage(
     content=(
         "You are an expert taxonomy analyst for public procurement tags."
         "Group each input tag into exactly one broad industry."
-        "Use human-readable industry names such as IT, budownictwo, transport, administracja, edukacja, medycyna, energetyka, usługi, rolnictwo, "
-        "finanse, inżynieria, and Inne when needed. "
-        "Preserve every tag key exactly as it appears in the input. Do not rename tags, split tags, or invent new tag text. "
-        "Preserve counts exactly. Each original tag must appear exactly once under one industry. "
+        "Use human-readable industry names such as IT, budownictwo, transport, administracja, szkolnictwo, medycyna, energetyka, rolnictwo, "
+        "finanse, inżynieria, usługi and Inne when needed. "
+        "CRITICAL INSTRUCTIONS: "
+        "1. Do not modify, rename, or fix typos in any tag text under any circumstances. (e.g., if a tag is 'usługi budowlane', keep it exactly as 'usługi budowlane').\n"
+        "2. Preserve the count exactly as it was provided for every tag. Never change a number.\n"
+        "3. Every original tag must appear exactly once under exactly one industry.\n"
+        "4. Do not invent new tags or drop any tags.\n"
         "Prefer a moderate number of broad industries rather than many tiny ones. "
         "Return only structured JSON matching the schema."
     )
@@ -78,8 +80,9 @@ async def group_tags_with_llm(tag_counts: dict[str, int]) -> dict[str, dict[str,
 
     prompt = (
         "Group the following tags into industries. "
-        "Return every original tag exactly once. "
-        "Use the exact original tag spelling as subcategory keys and keep the counts unchanged.\n\n"
+        "Return every original tag EXACTLY once. "
+        "Use the EXACT original tag spelling as subcategory keys and keep the counts UNCHANGED.\n\n"
+        "IMPORTANT: DO NOT modify any strings or numbers, even if you think there is a typo. Copy tags verabtim.\n\n"
         f"Input tags with counts:\n{json.dumps(sorted_tags, ensure_ascii=False, indent=2)}"
     )
 
