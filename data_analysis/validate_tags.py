@@ -42,7 +42,7 @@ def correct_numbers(original_counted_tags: dict[str, int], tags_grouped_by_llm: 
     for group, tags in tags_grouped_by_llm.items():
         selected_tags: dict[str, int] = {}
         for tag in list(tags.keys()):  # Use list() to avoid RuntimeError when deleting during iteration
-            if tag in seen_tags or tag not in original_counted_tags: # wykluczenie duplikatów i tych co sobie llm dorobił
+            if tag in seen_tags or tag not in original_counted_tags:  # wykluczenie duplikatów i tych co sobie llm dorobił
                 continue
             elif tags[tag] != original_counted_tags[tag]:
                 corrected += 1

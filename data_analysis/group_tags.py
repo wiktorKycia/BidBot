@@ -24,9 +24,11 @@ class TagCount(BaseModel):
     tag: str = Field(description="The exact original tag name")
     count: int = Field(description="The count of the tag")
 
+
 class IndustryGroup(BaseModel):
     industry: str = Field(description="The name of the industry")
     tags: list[TagCount] = Field(description="List of tags belonging to this industry")
+
 
 class GroupedTagsOutput(BaseModel):
     industries: list[IndustryGroup] = Field(description="List of clustered industries")
@@ -39,7 +41,8 @@ SYSTEM_PROMPT = SystemMessage(
         "Use human-readable industry names such as IT, budownictwo, transport, administracja, szkolnictwo, medycyna, energetyka, rolnictwo, "
         "finanse, inżynieria, usługi and Inne when needed. "
         "CRITICAL INSTRUCTIONS: "
-        "1. Do not modify, rename, or fix typos in any tag text under any circumstances. (e.g., if a tag is 'usługi budowlane', keep it exactly as 'usługi budowlane').\n"
+        "1. Do not modify, rename, or fix typos in any tag text under any circumstances. (e.g., if a tag is 'usługi budowlane', "
+        "keep it exactly as 'usługi budowlane').\n"
         "2. Preserve the count exactly as it was provided for every tag. Never change a number.\n"
         "3. Every original tag must appear exactly once under exactly one industry.\n"
         "4. Do not invent new tags or drop any tags.\n"
@@ -88,7 +91,7 @@ async def group_tags_with_llm(tag_counts: dict[str, int]) -> dict[str, dict[str,
 
     logger.info("Sending request to LLM...")
     response: GroupedTagsOutput = await llm.ainvoke([SYSTEM_PROMPT, HumanMessage(content=prompt)])
-    
+
     # Dump model response back to the standard grouped dictionary
     grouped = {}
     for ind in response.industries:
@@ -99,7 +102,7 @@ async def group_tags_with_llm(tag_counts: dict[str, int]) -> dict[str, dict[str,
 
 async def main() -> None:
     DEFAULT_JSON_OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    
+
     tag_counts = await load_tag_counts(DEFAULT_INPUT)
     grouped = await group_tags_with_llm(tag_counts)
 

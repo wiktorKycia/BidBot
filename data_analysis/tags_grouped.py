@@ -34,12 +34,15 @@ class TagCount(BaseModel):
     tag: str = Field(description="The exact original tag name")
     count: int = Field(description="The count of the tag")
 
+
 class IndustryGroup(BaseModel):
     industry: str = Field(description="The name of the industry")
     tags: list[TagCount] = Field(description="List of tags belonging to this industry")
 
+
 class GroupedTagsOutput(BaseModel):
     industries: list[IndustryGroup] = Field(description="List of clustered industries")
+
 
 SYSTEM_PROMPT = SystemMessage(
     content=(
