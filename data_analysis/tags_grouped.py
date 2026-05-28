@@ -25,19 +25,26 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
-DEFAULT_INPUT = ROOT_DIR / "etl" / "keyword_tagger" / "tags.json"
+DEFAULT_INPUT = ROOT_DIR / "etl" / "keyword_tagger" / "tags_counted.json"
 DEFAULT_JSON_OUTPUT = Path(__file__).resolve().parent / "analysis_output" / "tags_by_industries.json"
 DEFAULT_PNG_OUTPUT = Path(__file__).resolve().parent / "analysis_output" / "tags_by_industries.png"
 
 
-class GroupedTagsOutput(BaseModel):
-    industries: dict[str, dict[str, int]] = Field(description="Mapping from industry name to exact original tag names with their counts.")
+class TagCount(BaseModel):
+    tag: str = Field(description="The exact original tag name")
+    count: int = Field(description="The count of the tag")
 
+class IndustryGroup(BaseModel):
+    industry: str = Field(description="The name of the industry")
+    tags: list[TagCount] = Field(description="List of tags belonging to this industry")
+
+class GroupedTagsOutput(BaseModel):
+    industries: list[IndustryGroup] = Field(description="List of clustered industries")
 
 SYSTEM_PROMPT = SystemMessage(
     content=(
-        "You are an expert taxonomy analyst for public procurement tags. "
-        "Group each input tag into exactly one broad industry. "
+        "You are an expert taxonomy analyst for public procurement tags."
+        "Group each input tag into exactly one broad industry."
         "Use human-readable industry names such as IT, budownictwo, transport, administracja, edukacja, medycyna, energetyka, usługi, rolnictwo, "
         "finanse, inżynieria, and Inne when needed. "
         "Preserve every tag key exactly as it appears in the input. Do not rename tags, split tags, or invent new tag text. "
@@ -112,9 +119,7 @@ def validate_grouping(source_counts: dict[str, int], grouped: dict[str, dict[str
 
 def build_llm() -> Any:
     api_key = require_openai_api_key()
-    return ChatOpenAI(model=MODEL, api_key=lambda: api_key, temperature=0).with_structured_output(
-        GroupedTagsOutput, method="function_calling"
-    )
+    return ChatOpenAI(model=MODEL, api_key=lambda: api_key, temperature=0).with_structured_output(GroupedTagsOutput)
 
 
 async def group_tags_with_llm(tag_counts: dict[str, int], max_retries: int = 3) -> dict[str, dict[str, int]]:
@@ -135,10 +140,13 @@ async def group_tags_with_llm(tag_counts: dict[str, int], max_retries: int = 3) 
             prompt += f"\n\nThe previous attempt failed validation with this error: {last_error}. Fix the grouping and return only valid JSON."
 
         try:
-            response = await llm.ainvoke([SYSTEM_PROMPT, HumanMessage(content=prompt)])
-            grouped = response.industries
+            response: GroupedTagsOutput = await llm.ainvoke([SYSTEM_PROMPT, HumanMessage(content=prompt)])
+            print(response.model_dump_json(indent=4))
+            grouped = {}
+            for ind in response.industries:
+                grouped[ind.industry] = {t.tag: t.count for t in ind.tags}
+
             validate_grouping(sorted_tags, grouped)
-            return sort_grouped_industries(grouped)
         except Exception as exc:
             last_error = exc
             logger.warning("Grouping attempt %s/%s failed: %s", attempt, max_retries, exc)
