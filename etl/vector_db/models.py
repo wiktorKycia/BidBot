@@ -81,7 +81,6 @@ class MergedTender(BaseModel):
     attachment_chunks: list[str] = Field(default_factory=list)
 
 
-
 @dataclass(frozen=True)
 class IndexedDocument:
     """

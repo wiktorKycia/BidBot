@@ -14,10 +14,9 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 from etl.llms import MODEL, require_openai_api_key
 from etl.loggers import setup_logging
-from etl.scrapers.settings import BASE_DIR, PARSED_DIR
+from etl.scrapers.settings import PARSED_DIR
 from etl.settings import CHROMA_DB_PATH, TAGS_PATH
-from etl.utils import read_json
-from etl.vector_db.models import IndexedDocument, LoadDataStrategy, OfferSummary, RetrievalPlan, MergedTender
+from etl.vector_db.models import IndexedDocument, LoadDataStrategy, MergedTender, OfferSummary, RetrievalPlan
 from etl.vector_db.prompts import main_system_message_template, use_search_system_message_template
 from etl.vector_db.vector_saver import load_data
 
@@ -27,7 +26,7 @@ OPENAI_API_KEY = require_openai_api_key()
 MODEL_EMBEDDINGS = "text-embedding-3-small"
 
 try:
-    with open(TAGS_PATH, "r", encoding="utf-8") as f:
+    with open(TAGS_PATH, encoding="utf-8") as f:
         _tags_data = json.load(f)
     TAGS_STR = ", ".join(_tags_data.get("tags", [])) if isinstance(_tags_data, dict) else ""
 except Exception:
@@ -431,42 +430,43 @@ def semantic_lookup(plan: RetrievalPlan) -> list[IndexedDocument]:
 
 def merge_tender_data(tender_id: str, attachment_chunks: list[str] = None) -> MergedTender:
     import uuid
+
     from etl.postgres_saver import get_tender_by_id, get_tender_tags
-    
+
     tender_sql = None
     try:
         tender_sql = get_tender_by_id(uuid.UUID(tender_id))
     except Exception as e:
         logger.error(f"Error fetching tender {tender_id} from PostgreSQL: {e}")
-        
+
     tender_json = {}
     try:
         json_path = PARSED_DIR / f"{tender_id}.json"
         if json_path.exists():
-            with open(json_path, "r", encoding="utf-8") as f:
+            with open(json_path, encoding="utf-8") as f:
                 tender_json = json.load(f)
     except Exception as e:
         logger.error(f"Error reading raw JSON for tender {tender_id}: {e}")
-        
+
     sql_tags = []
     if tender_sql:
         try:
             sql_tags = get_tender_tags(tender_sql.id)
         except Exception:
             pass
-            
+
     enrichment = tender_json.get("enrichment") or {}
     json_tags = enrichment.get("tags") or []
     merged_tags = list(set(sql_tags + json_tags))
-    
+
     sql_nuts3 = tender_sql.nuts3 if (tender_sql and tender_sql.nuts3) else []
     json_nuts3 = enrichment.get("nuts3") or []
     merged_nuts3 = list(set(sql_nuts3 + json_nuts3))
-    
+
     sql_cpv = tender_sql.cpv_codes if (tender_sql and tender_sql.cpv_codes) else []
     json_cpv = tender_json.get("cpvCodes", []) or []
     merged_cpv = list(set(sql_cpv + json_cpv))
-    
+
     return MergedTender(
         id=tender_id,
         title=tender_sql.title if (tender_sql and tender_sql.title) else (tender_json.get("title") or "unknown"),
@@ -476,7 +476,9 @@ def merge_tender_data(tender_id: str, attachment_chunks: list[str] = None) -> Me
         scraper_url=tender_sql.scraper_url if (tender_sql and tender_sql.scraper_url) else (tender_json.get("scraper_url") or ""),
         created_at=str(tender_sql.created_at) if (tender_sql and tender_sql.created_at) else (tender_json.get("createdAt") or ""),
         publication_date=str(tender_sql.publication_date) if (tender_sql and tender_sql.publication_date) else (tender_json.get("publicationDate") or ""),
-        submitting_offers_deadline=str(tender_sql.submitting_offers_deadline) if (tender_sql and tender_sql.submitting_offers_deadline) else (tender_json.get("submittingOffersDeadline") or ""),
+        submitting_offers_deadline=str(tender_sql.submitting_offers_deadline)
+        if (tender_sql and tender_sql.submitting_offers_deadline)
+        else (tender_json.get("submittingOffersDeadline") or ""),
         industry=tender_sql.industry if (tender_sql and tender_sql.industry) else (enrichment.get("industry") or ""),
         nuts3=merged_nuts3,
         cpv_codes=merged_cpv,
@@ -491,7 +493,7 @@ def merge_tender_data(tender_id: str, attachment_chunks: list[str] = None) -> Me
         llm_kryteria_oceny=tender_sql.llm_kryteria_oceny if (tender_sql and tender_sql.llm_kryteria_oceny) else [],
         llm_wymagane_dokumenty=tender_sql.llm_wymagane_dokumenty if (tender_sql and tender_sql.llm_wymagane_dokumenty) else [],
         llm_ryzyka=tender_sql.llm_ryzyka if (tender_sql and tender_sql.llm_ryzyka) else [],
-        attachment_chunks=attachment_chunks or []
+        attachment_chunks=attachment_chunks or [],
     )
 
 
@@ -508,7 +510,7 @@ def format_merged_tender(record: MergedTender, detailed: bool = False) -> str:
         ]
         if record.tags:
             lines.append(f"Tags: {', '.join(record.tags)}")
-        
+
         if record.llm_extracted:
             lines.append("Structured LLM Analysis:")
             lines.append(f"  Gemini Title: {record.llm_tytul}")
@@ -539,34 +541,29 @@ def format_merged_tender(record: MergedTender, detailed: bool = False) -> str:
         desc_parts.append(f"Miejsce realizacji: {record.llm_miejsce_realizacji}")
         if record.llm_wymagania_techniczne:
             desc_parts.append(f"Kluczowe wymagania: {'; '.join(record.llm_wymagania_techniczne)}")
-    
+
     if record.attachment_chunks:
         desc_parts.append("Kluczowe fragmenty z dokumentów:")
         for chunk in record.attachment_chunks[:3]:
             desc_parts.append(f"  - {chunk.strip()}")
-            
+
     if not desc_parts:
         desc_parts.append(record.description or "")
-        
+
     combined_desc = "\n".join(desc_parts)[:1500]
 
     summary = OfferSummary(
-        offer_id=record.id,
-        title=record.title or "unknown",
-        source_url=record.scraper_url or "",
-        tags=record.tags,
-        short_description=combined_desc
+        offer_id=record.id, title=record.title or "unknown", source_url=record.scraper_url or "", tags=record.tags, short_description=combined_desc
     )
     return summary.model_dump_json(indent=2)
 
 
 async def hybrid_retrieve(question: str, conversation_history: list[dict[str, str]]) -> tuple[RetrievalPlan, list[MergedTender], bool]:
-    import uuid
     from etl.postgres_saver import search_tenders_sql
-    
+
     plan = plan_search(question, conversation_history)
     detailed = len(plan.offer_ids) > 0
-    
+
     if plan.offer_ids:
         logger.info(f"Direct UUID lookup triggered for IDs: {plan.offer_ids}")
         merged_tenders = []
@@ -578,7 +575,7 @@ async def hybrid_retrieve(question: str, conversation_history: list[dict[str, st
                     attachment_chunks = results.get("documents", []) or []
                 except Exception as chroma_err:
                     logger.error(f"Chroma error during exact lookup for {oid}: {chroma_err}")
-                
+
                 merged = merge_tender_data(oid, attachment_chunks)
                 merged_tenders.append(merged)
             except Exception as e:
@@ -618,7 +615,7 @@ async def hybrid_retrieve(question: str, conversation_history: list[dict[str, st
             for record in semantic_matches:
                 if record.offer_id == str_id:
                     chunks.append(record.raw_text)
-            
+
             merged = merge_tender_data(str_id, chunks)
             combined_tenders.append(merged)
 
