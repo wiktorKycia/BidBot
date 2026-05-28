@@ -11,7 +11,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
-DEFAULT_INPUT = ROOT_DIR / "etl" / "keyword_tagger" / "tags.json"
+DEFAULT_INPUT = ROOT_DIR / "etl" / "keyword_tagger" / "tags_counted.json"
 DEFAULT_OUTPUT = Path(__file__).resolve().parent / "analysis_output" / "tags.png"
 
 

@@ -42,7 +42,7 @@ async def main():
         else:
             tag_counts.update(tag.strip() for tag in res if tag and tag.strip())
 
-    await save_json(Path(__file__).resolve().parent / "tags.json", {"tags": dict(tag_counts)})
+    await save_json(Path(__file__).resolve().parent / "tags_counted.json", {"tags": dict(tag_counts)})
 
 
 if __name__ == "__main__":

@@ -13,7 +13,7 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 from etl.llms import MODEL, require_openai_api_key
 from etl.loggers import setup_logging
-from etl.settings import CHROMA_DB_PATH, TAGS_PATH
+from etl.settings import CHROMA_DB_PATH, get_all_tags
 from etl.vector_db.models import IndexedDocument, LoadDataStrategy, OfferSummary, RetrievalPlan
 from etl.vector_db.prompts import main_system_message_template, use_search_system_message_template
 from etl.vector_db.vector_saver import load_data
@@ -22,16 +22,18 @@ OPENAI_API_KEY = require_openai_api_key()
 
 MODEL_EMBEDDINGS = "text-embedding-3-small"
 
-try:
-    with open(TAGS_PATH) as f:
-        _tags_data: dict = json.loads(f.read())
-        TAGS_STR = ", ".join(_tags_data.get("tags", [])) if isinstance(_tags_data, dict) else ""
-except Exception:
-    TAGS_STR = ""
-
 MAX_CONTEXT_DOCS = 10
 MAX_CHROMA_BATCH = 5461
 TRANSACTION_ID_PATTERN = re.compile(r"\b[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}\b")
+
+setup_logging()
+logger = logging.getLogger("vector_db")
+
+try:
+    TAGS_STR = get_all_tags()
+except Exception as e:
+    logger.error(f"Could not get all tags, due to error: {e}")
+    TAGS_STR = ""
 
 
 def to_json_log(payload: Any) -> str:
@@ -580,9 +582,6 @@ def main():
 
 
 if __name__ == "__main__":
-    setup_logging()
-    logger = logging.getLogger("vector_db")
-
     llm = ChatOpenAI(model=MODEL)
     embeddings = OpenAIEmbeddings(model=MODEL_EMBEDDINGS)
 
