@@ -67,6 +67,7 @@ with tab_chat:
             except Exception as e:
                 logger.exception(f"❌ Unexpected error in frontend: {e}")
                 st.error("❌ Wystąpił nieoczekiwany błąd. Spróbuj ponownie później.")
+        st.rerun()
 
 with tab_analysis:
     import json
