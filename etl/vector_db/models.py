@@ -47,24 +47,39 @@ class RetrievalPlan(BaseModel):
 
 
 class OfferSummary(BaseModel):
-    """
-    Pydantic model representing a summary of a public tender offer.
-
-    Used for structured output formatting when presenting document summaries to the LLM.
-
-    Attributes:
-        offer_id: Unique offer ID for the public tender.
-        title: Title of the offer.
-        source_url: URL to the original offer source.
-        tags: List of categorization tags associated with the offer.
-        short_description: Brief excerpt from the offer description (truncated).
-    """
-
     offer_id: str = Field(description="Offer ID of the offer")
     title: str = Field(description="Title of the offer")
     source_url: str = Field(description="URL to the offer source")
     tags: list[str] = Field(description="Tags associated with the offer", default_factory=list)
     short_description: str = Field(description="A brief snippet of the description", default="")
+
+
+class MergedTender(BaseModel):
+    id: str = Field(description="Unique UUID string for the tender")
+    title: str | None = Field(default=None)
+    description: str | None = Field(default=None)
+    reference_number: str | None = Field(default=None)
+    contract_nature: str | None = Field(default=None)
+    scraper_url: str | None = Field(default=None)
+    created_at: str | None = Field(default=None)
+    publication_date: str | None = Field(default=None)
+    submitting_offers_deadline: str | None = Field(default=None)
+    industry: str | None = Field(default=None)
+    nuts3: list[str] = Field(default_factory=list)
+    cpv_codes: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+    llm_extracted: bool = Field(default=False)
+    llm_tytul: str | None = Field(default=None)
+    llm_zamawiajacy: str | None = Field(default=None)
+    llm_budzet: str | None = Field(default=None)
+    llm_deadline: str | None = Field(default=None)
+    llm_miejsce_realizacji: str | None = Field(default=None)
+    llm_wymagania_techniczne: list[str] = Field(default_factory=list)
+    llm_kryteria_oceny: list[str] = Field(default_factory=list)
+    llm_wymagane_dokumenty: list[str] = Field(default_factory=list)
+    llm_ryzyka: list[str] = Field(default_factory=list)
+    attachment_chunks: list[str] = Field(default_factory=list)
+
 
 
 @dataclass(frozen=True)

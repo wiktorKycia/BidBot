@@ -86,11 +86,11 @@ app = FastAPI(title="BidBot Chat API", lifespan=lifespan)
 
 
 @app.post("/chat", response_model=ChatResponse)
-def chat_with_bot(request: ChatRequest):
+async def chat_with_bot(request: ChatRequest):
     if not app_ready:
         raise HTTPException(status_code=503, detail="initializing")
     try:
-        bot_answer = ask(request.message, request.history)
+        bot_answer = await ask(request.message, request.history)
         return ChatResponse(answer=bot_answer)
     except Exception as e:
         ragemain.logger.exception(f"Krytyczny błąd podczas wywołania czatu: {e}")

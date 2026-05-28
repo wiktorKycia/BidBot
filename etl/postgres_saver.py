@@ -256,6 +256,38 @@ def save_llm_data(tender_id: str, tender_data) -> bool:
         session.close()
 
 
+def get_tender_by_id(tender_id: uuid.UUID) -> Tender | None:
+    session = SessionLocal()
+    try:
+        return session.query(Tender).filter(Tender.id == tender_id).first()
+    finally:
+        session.close()
+
+
+def get_tender_tags(tender_id: uuid.UUID) -> list[str]:
+    session = SessionLocal()
+    try:
+        tags = session.query(TenderTag).filter(TenderTag.tender_id == tender_id).all()
+        return [t.tag for t in tags]
+    finally:
+        session.close()
+
+
+def search_tenders_sql(search_query: str, limit: int = 5) -> list[Tender]:
+    if not search_query.strip():
+        return []
+    session = SessionLocal()
+    try:
+        query_str = f"%{search_query}%"
+        return session.query(Tender).outerjoin(TenderTag).filter(
+            (Tender.title.ilike(query_str)) |
+            (Tender.description.ilike(query_str)) |
+            (TenderTag.tag.ilike(query_str))
+        ).distinct().limit(limit).all()
+    finally:
+        session.close()
+
+
 def main():
     logging.basicConfig(level=logging.INFO)
     logger.info("Initializing PostgreSQL relational schema...")
