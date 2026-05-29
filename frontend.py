@@ -105,12 +105,13 @@ with tab_analysis:
             base_pie = alt.Chart(pie_df).encode(
                 theta=alt.Theta("Liczba:Q", stack=True),
                 color=alt.Color("Branża:N", sort=alt.EncodingSortField(field="Liczba", order="descending")),
+                order=alt.Order("Liczba:Q", sort="descending"),
                 tooltip=["Branża", "Liczba"]
             )
 
-            pie_chart = base_pie.mark_arc(outerRadius=100)
+            pie_chart = base_pie.mark_arc(outerRadius=150)
 
-            pie_text = base_pie.mark_text(radius=120).encode(
+            pie_text = base_pie.mark_text(radius=200, fontSize=16).encode(
                 text="Branża:N"
             )
 
@@ -121,7 +122,7 @@ with tab_analysis:
 
             final_pie_chart = (
                 (pie_chart + pie_text)
-                .properties(title="Udział tagów według branż")
+                .properties(title="Udział tagów według branż", height=550)
                 .configure_title(fontSize=20)
                 .configure_legend(titleFontSize=16, labelFontSize=14)
             )
@@ -166,6 +167,14 @@ with tab_analysis:
         else:
             sorted_industries = dict(sorted(industries.items(), key=lambda item: (-item[1], item[0].lower())))
 
+
+            top_n = 15
+            if len(sorted_industries) > top_n:
+                top_industries = dict(list(sorted_industries.items())[:top_n])
+                other_sum = sum(list(sorted_industries.values())[top_n:])
+                top_industries["inne"] = top_industries.get("inne", 0) + other_sum
+                sorted_industries = top_industries
+
             # Pie / Donut Chart
             pie_data = [{"Branża": ind, "Liczba": number} for ind, number in sorted_industries.items()]
             pie_df = pd.DataFrame(pie_data)
@@ -173,12 +182,13 @@ with tab_analysis:
             base_pie = alt.Chart(pie_df).encode(
                 theta=alt.Theta("Liczba:Q", stack=True),
                 color=alt.Color("Branża:N", sort=alt.EncodingSortField(field="Liczba", order="descending")),
+                order=alt.Order("Liczba:Q", sort="descending"),
                 tooltip=["Branża", "Liczba"]
             )
 
             pie_chart = base_pie.mark_arc(outerRadius=200)
 
-            pie_text = base_pie.mark_text(radius=300).encode(
+            pie_text = base_pie.mark_text(radius=300, angle=0, fontSize=16).encode(
                 text="Branża:N"
             )
 
@@ -189,10 +199,9 @@ with tab_analysis:
 
             final_pie_chart = (
                 (pie_chart + pie_text)
-                .properties(title="Branże wśród ofert")
+                .properties(title="Branże wśród ofert", height=800)
                 .configure_title(fontSize=20)
                 .configure_legend(titleFontSize=16, labelFontSize=14)
             )
 
-            st.altair_chart(final_pie_chart, width='stretch')
-
+            st.altair_chart(final_pie_chart, use_container_width=True)
