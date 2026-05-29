@@ -15,21 +15,22 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from etl.llms import MODEL, require_openai_api_key
 from etl.loggers import setup_logging
 from etl.scrapers.settings import PARSED_DIR
-from etl.settings import CHROMA_DB_PATH, TAGS_PATH
+from etl.settings import CHROMA_DB_PATH, EMBEDDING_MODEL, TAGS_PATH
 from etl.vector_db.models import IndexedDocument, LoadDataStrategy, MergedTender, OfferSummary, RetrievalPlan
 from etl.vector_db.prompts import main_system_message_template, use_search_system_message_template
 from etl.vector_db.vector_saver import load_data
 
-logger = logging.getLogger("vector_db")
 OPENAI_API_KEY = require_openai_api_key()
 
-MODEL_EMBEDDINGS = "text-embedding-3-small"
+logger = logging.getLogger("vector_db")
+MODEL_EMBEDDINGS = EMBEDDING_MODEL
 
 try:
     with open(TAGS_PATH, encoding="utf-8") as f:
         _tags_data = json.load(f)
     TAGS_STR = ", ".join(_tags_data.get("tags", [])) if isinstance(_tags_data, dict) else ""
 except Exception:
+    logger.warning(f"Failed to load tags from {TAGS_PATH}, falling back to empty string")
     TAGS_STR = ""
 
 MAX_CONTEXT_DOCS = 10
@@ -262,7 +263,7 @@ def plan_search(question: str, conversation_history: list[dict[str, str]]) -> Re
     offer_ids = unique_strings(offer_ids)
 
     search_query = str(plan.search_query).strip()
-    if not search_query and not offer_ids:
+    if not search_query and not offer_ids and plan.needs_search:
         search_query = question.strip()
 
     needs_search = bool(plan.needs_search)
@@ -277,6 +278,9 @@ def plan_search(question: str, conversation_history: list[dict[str, str]]) -> Re
     excluded_offer_ids = [str(item) for item in plan.excluded_offer_ids if str(item).strip()]
     excluded_offer_ids = unique_strings(excluded_offer_ids)
     keywords = [str(kw).strip() for kw in plan.keywords if str(kw).strip()]
+
+    if not plan.needs_search and not plan.search_query and not plan.offer_ids and not plan.excluded_offer_ids and not plan.top_k:
+        plan.warning = True
 
     logger.debug(
         "retrieval_plan_final=%s",

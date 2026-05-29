@@ -14,6 +14,7 @@ from pydantic import BaseModel
 import etl.vector_db.main as ragemain
 from etl.llms import MODEL
 from etl.loggers import setup_logging
+from etl.settings import CHROMA_DB_PATH, EMBEDDING_MODEL
 from etl.vector_db.main import ask, build_indexed_document
 from etl.vector_db.models import LoadDataStrategy
 from etl.vector_db.vector_saver import load_data
@@ -33,10 +34,7 @@ class ChatResponse(BaseModel):
 
 app_ready = False
 
-BASE_DIR = Path(__file__).resolve().parent
-CHROMA_DB_PATH = BASE_DIR / "etl" / "vector_db" / "chroma_langchain_db"
-
-embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+embeddings = OpenAIEmbeddings(model=EMBEDDING_MODEL)
 vector_store = Chroma(
     collection_name=os.getenv("CHROMA_COLLECTION_NAME", "bid_info_json"), embedding_function=embeddings, persist_directory=str(CHROMA_DB_PATH)
 )
