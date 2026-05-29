@@ -1,9 +1,10 @@
+import asyncio
 import json
 import logging
 import os
 import re
+from collections import defaultdict
 from operator import itemgetter
-from pathlib import Path
 from typing import Any
 
 from langchain_chroma import Chroma
@@ -13,49 +14,89 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 from etl.llms import MODEL, require_openai_api_key
 from etl.loggers import setup_logging
-from etl.vector_db.models import IndexedDocument, LoadDataStrategy, RetrievalPlan
+from etl.scrapers.settings import PARSED_DIR
+from etl.settings import CHROMA_DB_PATH, EMBEDDING_MODEL, TAGS_PATH
+from etl.vector_db.models import IndexedDocument, LoadDataStrategy, MergedTender, OfferSummary, RetrievalPlan
 from etl.vector_db.prompts import main_system_message_template, use_search_system_message_template
 from etl.vector_db.vector_saver import load_data
 
 OPENAI_API_KEY = require_openai_api_key()
 
-MODEL_EMBEDDINGS = "text-embedding-3-small"
+logger = logging.getLogger("vector_db")
+MODEL_EMBEDDINGS = EMBEDDING_MODEL
 
-CHROMA_DB_PATH = Path("chroma_langchain_db")
+try:
+    with open(TAGS_PATH, encoding="utf-8") as f:
+        _tags_data = json.load(f)
+    TAGS_STR = ", ".join(_tags_data.get("tags", [])) if isinstance(_tags_data, dict) else ""
+except Exception:
+    logger.warning(f"Failed to load tags from {TAGS_PATH}, falling back to empty string")
+    TAGS_STR = ""
 
-MAX_CONTEXT_DOCS = 5
+MAX_CONTEXT_DOCS = 10
 MAX_CHROMA_BATCH = 5461
-TRANSACTION_ID_PATTERN = re.compile(r"\b(?:\d{6,}|[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12})\b")
-
-
-class LLMReturnedFaultyDataFormatError(Exception):
-    """Raised when the llm returns unexpected data format"""
-
-    pass
+TRANSACTION_ID_PATTERN = re.compile(r"\b[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}\b")
 
 
 def to_json_log(payload: Any) -> str:
+    """
+    Convert a Python object to a formatted JSON string for logging purposes.
+
+    Args:
+        payload: Any Python object to be serialized to JSON.
+
+    Returns:
+        A JSON-formatted string with 2-space indentation and non-ASCII characters preserved.
+    """
     return json.dumps(payload, ensure_ascii=False, default=str, indent=2)
 
 
 def document_log_payload(record: Any) -> dict[str, Any]:
+    """
+    Extract relevant document logging fields from an IndexedDocument record.
+
+    Args:
+        record: An IndexedDocument object to extract metadata from.
+
+    Returns:
+        A dictionary containing filepath, source_url, title, and offer_id fields.
+    """
     return {
         "filepath": record.filepath,
         "source_url": record.source_url,
         "title": record.title,
         "offer_id": record.offer_id,
-        # "raw_text": record.raw_text,
     }
 
 
 def unique_strings(values: list[str]) -> list[str]:
-    """removes duplicates while preserving order. It is used to keep offer IDs from repeating"""
+    """
+    Remove duplicate strings while preserving order.
+
+    Used to prevent offer IDs from repeating in sequences.
+
+    Args:
+        values: A list of strings that may contain duplicates.
+
+    Returns:
+        A list of unique strings in the original order.
+    """
     return list(dict.fromkeys(values))
 
 
 def extract_offer_ids_from_text(*values: str) -> tuple[str, ...]:
-    """scans one or more text blobs and returns all matching offer IDs. It is used on the question, history, raw document text
-    and source metadata"""
+    """
+    Extract all matching offer IDs (UUIDs) from one or more text blobs.
+
+    Scans text using a regex pattern to find transaction IDs in UUID format
+    (8-4-4-4-12 hex digit pattern).
+
+    Args:
+        *values: Variable number of text strings to scan for offer IDs.
+
+    Returns:
+        A tuple of unique offer IDs found across all input texts.
+    """
     ids: list[str] = []
     for value in values:
         ids.extend(TRANSACTION_ID_PATTERN.findall(value))
@@ -63,8 +104,18 @@ def extract_offer_ids_from_text(*values: str) -> tuple[str, ...]:
 
 
 def build_indexed_document(document: Document) -> IndexedDocument:
-    """converts a LangChain document into the internal"""
+    """
+    Convert a LangChain Document into an internal IndexedDocument representation.
 
+    Parses JSON from document content and extracts metadata fields. Falls back
+    to default values if JSON parsing fails or fields are missing.
+
+    Args:
+        document: A LangChain Document object with page_content and metadata.
+
+    Returns:
+        An IndexedDocument with normalized metadata and content.
+    """
     raw_text = document.page_content.strip()
     try:
         payload = json.loads(raw_text)
@@ -73,30 +124,79 @@ def build_indexed_document(document: Document) -> IndexedDocument:
     except json.JSONDecodeError:
         payload = {}
 
-    # extract a source path from metadata
     source = payload.get("scraper_url", "no url provided")
     filepath = document.metadata.get("source", "document not downloaded")
     title = document.metadata.get("title", "unknown")
     offer_id = document.metadata.get("offer_id", "unknown")
+    source_type = document.metadata.get("source_type", "unknown")
 
-    return IndexedDocument(document=document, source_url=source, filepath=filepath, title=title, offer_id=offer_id, raw_text=raw_text)
+    return IndexedDocument(
+        document=document, source_url=source, filepath=filepath, title=title, offer_id=offer_id, raw_text=raw_text, source_type=source_type
+    )
 
 
-def format_indexed_document(record: IndexedDocument) -> str:
-    """converts one IndexedDocument into readable text for the prompt"""
-    lines = [
-        f"Title: {record.title}",
-        f"Source: {record.source_url}",
-    ]
-    if record.offer_id:
-        lines.append(f"Offer ID: {record.offer_id}")
-    lines.append("Content:")
-    lines.append(record.raw_text)
-    return "\n".join(lines)
+def format_indexed_document(record: IndexedDocument, detailed: bool = False) -> str:
+    """
+    Convert an IndexedDocument into readable text formatted for LLM prompts.
+
+    Can produce either a detailed format (full content) or a summary format
+    (structured OfferSummary). Summary format extracts tags and descriptions
+    from JSON source_type documents.
+
+    Args:
+        record: The IndexedDocument to format.
+        detailed: If True, return full document content; if False, return structured summary.
+
+    Returns:
+        A formatted string representation of the document, either detailed or summary.
+    """
+    if detailed:
+        lines = [
+            f"Title: {record.title}",
+            f"Source: {record.source_url}",
+        ]
+        if record.offer_id:
+            lines.append(f"Offer ID: {record.offer_id}")
+        lines.append("Content:")
+        lines.append(record.raw_text)
+        return "\n".join(lines)
+
+    tags = []
+    desc = ""
+    if record.source_type == "json":
+        try:
+            payload = json.loads(record.raw_text)
+            enrichment = payload.get("enrichment", {})
+            if isinstance(enrichment, dict):
+                tags = enrichment.get("tags", [])
+            desc = str(payload.get("description", ""))[:500] + "..."
+        except Exception:
+            pass
+
+    summary = OfferSummary(
+        offer_id=record.offer_id,
+        title=record.title,
+        source_url=record.source_url,
+        tags=tags,
+        short_description=desc,
+    )
+    return summary.model_dump_json(indent=2)
 
 
 def format_history(conversation_history: list[dict[str, str]], max_turns: int = 6) -> str:
-    """turns the last few chat turns into a compact transcript"""
+    """
+    Format the last N conversation turns into a compact transcript.
+
+    Combines recent user and assistant messages into a human-readable format
+    for inclusion in LLM prompts.
+
+    Args:
+        conversation_history: List of conversation turns, each with 'user' and 'assistant' keys.
+        max_turns: Maximum number of recent turns to include in the transcript (default: 6).
+
+    Returns:
+        A formatted string with recent conversation turns, or a placeholder if empty.
+    """
     recent_turns = conversation_history[-max_turns:]
     if not recent_turns:
         return "No prior conversation."
@@ -109,58 +209,65 @@ def format_history(conversation_history: list[dict[str, str]], max_turns: int = 
 
 def plan_search(question: str, conversation_history: list[dict[str, str]]) -> RetrievalPlan:
     """
-    asks an LLM to produce a JSON plan containing:
+    Use an LLM to generate a structured retrieval plan for a user question.
 
-    - whether retrieval is needed,
-    - a focused search query,
-    - any offer IDs,
-    - the desired top_k.
+    Sends the question and conversation history to a language model to produce
+    a JSON plan containing: whether retrieval is needed, focused search query,
+    detected offer IDs, and desired top_k document count.
+
+    Cross-validates LLM-detected offer IDs with regex-extracted IDs to limit
+    hallucinations. Applies fallback logic for missing or invalid values.
+
+    Args:
+        question: The user's question to analyze.
+        conversation_history: List of previous conversation turns for context.
+
+    Returns:
+        A RetrievalPlan object with retrieval strategy and parameters.
+
+    Raises:
+        KeyError: If prompt formatting fails due to missing variables.
+        Exception: If LLM invocation fails.
     """
     history_text = format_history(conversation_history)
     planning_prompt = ChatPromptTemplate.from_messages(
         [
-            SystemMessagePromptTemplate.from_template(use_search_system_message_template),
+            SystemMessagePromptTemplate.from_template(use_search_system_message_template, partial_variables={"tags": TAGS_STR}),
             (
                 "human",
                 "Conversation history:\n{history}\n\nCurrent question:\n{question}",
             ),
         ]
     )
-    planner = ChatOpenAI(model=MODEL, temperature=0, max_retries=3, model_kwargs={"response_format": {"type": "json_object"}})
+    planner = ChatOpenAI(model=MODEL, temperature=0, max_retries=3).with_structured_output(RetrievalPlan)
 
     try:
-        response = planner.invoke(planning_prompt.format_messages(history=history_text, question=question)).content.strip()
-        payload = json.loads(response)
-    except (AttributeError, json.JSONDecodeError, TypeError) as e:
-        logger.exception(f"Wrong response type from planner: {e}")
-        raise
+        plan: RetrievalPlan = planner.invoke(planning_prompt.format_messages(history=history_text, question=question))
     except KeyError as e:
         logger.exception(f"The prompt formatting failed due to missing `history` or `question` variables: {e}")
         raise
+    except Exception as e:
+        logger.exception(f"Error from planner: {e}")
+        raise
 
-    logger.debug(f"retrieval_plan_raw_output={to_json_log(payload)}")
-    if (
-        not isinstance(payload, dict)
-        or "offer_ids" not in payload
-        or "search_query" not in payload
-        or "needs_search" not in payload
-        or "top_k" not in payload
-    ):
-        logger.exception("The planner llm did not return the correct data format!")
-        raise LLMReturnedFaultyDataFormatError("The planner llm did not return the correct data format!")
+    logger.debug(f"retrieval_plan_raw_output={plan.model_dump_json(indent=2)}")
 
-    # if a offer id is present, match it directly against the indexed documents
+    # if offer id is present, match it directly against the indexed documents
     detected_ids = extract_offer_ids_from_text(question, format_history(conversation_history, 2))
-    planned_ids = payload.get("offer_ids", [])
+    planned_ids = plan.offer_ids
     planned_ids = [str(item) for item in planned_ids if str(item).strip()]
 
-    offer_ids = unique_strings(list(detected_ids) + planned_ids)
-    search_query = str(payload.get("search_query", "")).strip()
-    if not search_query:
+    # intersect planner logic with extracted regex to limit hallucinations
+    detected_ids_set = set(detected_ids)
+    offer_ids = [pid for pid in planned_ids if pid in detected_ids_set]
+    offer_ids = unique_strings(offer_ids)
+
+    search_query = str(plan.search_query).strip()
+    if not search_query and not offer_ids and plan.needs_search:
         search_query = question.strip()
 
-    needs_search = bool(payload.get("needs_search", True))
-    top_k = payload.get("top_k", 3)
+    needs_search = bool(plan.needs_search)
+    top_k = plan.top_k
     if not isinstance(top_k, int) or top_k < 0:
         top_k = 3
     top_k = min(top_k, MAX_CONTEXT_DOCS)
@@ -168,22 +275,51 @@ def plan_search(question: str, conversation_history: list[dict[str, str]]) -> Re
     if offer_ids:
         needs_search = True
 
+    excluded_offer_ids = [str(item) for item in plan.excluded_offer_ids if str(item).strip()]
+    excluded_offer_ids = unique_strings(excluded_offer_ids)
+    keywords = [str(kw).strip() for kw in plan.keywords if str(kw).strip()]
+
+    if not plan.needs_search and not plan.search_query and not plan.offer_ids and not plan.excluded_offer_ids and not plan.top_k:
+        plan.warning = True
+
     logger.debug(
         "retrieval_plan_final=%s",
         to_json_log(
             {
                 "needs_search": needs_search,
                 "search_query": search_query,
+                "keywords": keywords,
                 "offer_ids": list(offer_ids),
                 "top_k": top_k,
+                "warning": bool(plan.warning),
             }
         ),
     )
 
-    return RetrievalPlan(needs_search=needs_search, search_query=search_query, offer_ids=tuple(offer_ids), top_k=top_k)
+    return RetrievalPlan(
+        needs_search=needs_search,
+        search_query=search_query,
+        keywords=keywords,
+        offer_ids=offer_ids,
+        excluded_offer_ids=excluded_offer_ids,
+        top_k=top_k,
+        warning=bool(plan.warning),
+    )
 
 
-def exact_offer_lookup(offer_ids: tuple[str, ...]) -> list[IndexedDocument]:
+def exact_offer_lookup(offer_ids: list[str]) -> list[IndexedDocument]:
+    """
+    Retrieve documents by exact offer ID match from the in-memory index.
+
+    Performs a direct lookup against indexed_documents_by_id dictionary
+    to find all documents associated with given offer IDs.
+
+    Args:
+        offer_ids: List of offer IDs to search for.
+
+    Returns:
+        A list of IndexedDocument objects matching the offer IDs.
+    """
     if not offer_ids:
         logger.debug("exact_offer_lookup skipped: no offer ids provided")
         return []
@@ -212,11 +348,25 @@ def exact_offer_lookup(offer_ids: tuple[str, ...]) -> list[IndexedDocument]:
     return matched_documents
 
 
-def semantic_lookup(search_query: str, limit: int) -> list[IndexedDocument]:
-    if not search_query.strip() or limit <= 0:
+def semantic_lookup(plan: RetrievalPlan) -> list[IndexedDocument]:
+    """
+    Retrieve documents using semantic similarity search via the vector store.
+
+    Queries the Chroma vector store with the search query from the retrieval plan.
+    Applies optional filtering by offer IDs and source type. Returns results sorted
+    by relevance score.
+
+    Args:
+        plan: A RetrievalPlan containing search query, top_k limit, and optional ID filters.
+
+    Returns:
+        A list of IndexedDocument objects ranked by semantic similarity.
+    """
+    search_query = plan.search_query.strip()
+    if not search_query or plan.top_k <= 0:
         logger.debug(
             "semantic_lookup skipped=%s",
-            to_json_log({"search_query": search_query, "limit": limit}),
+            to_json_log({"search_query": search_query, "limit": plan.top_k}),
         )
         return []
 
@@ -225,16 +375,33 @@ def semantic_lookup(search_query: str, limit: int) -> list[IndexedDocument]:
         to_json_log(
             {
                 "search_query": search_query,
-                "limit": limit,
+                "limit": plan.top_k,
             }
         ),
     )
 
+    where_filter = {}
+    if not plan.offer_ids:
+        where_filter["source_type"] = "json"
+
+    if plan.excluded_offer_ids:
+        if len(plan.excluded_offer_ids) == 1:
+            where_filter["offer_id"] = {"$ne": plan.excluded_offer_ids[0]}
+        else:
+            where_filter["offer_id"] = {"$nin": list(plan.excluded_offer_ids)}
+
+    chroma_filter = None
+    if len(where_filter) > 1:
+        chroma_filter = {"$and": [{k: v} for k, v in where_filter.items()]}
+    elif len(where_filter) == 1:
+        chroma_filter = where_filter
+
     try:
-        results = vector_store.similarity_search_with_relevance_scores(
-            search_query,
-            k=limit,
-        )
+        kwargs: dict[str, Any] = {"k": plan.top_k}
+        if chroma_filter:
+            kwargs["filter"] = chroma_filter
+
+        results = vector_store.similarity_search_with_relevance_scores(search_query, **kwargs)
     except Exception as e:
         logger.exception(f"semantic lookup failed: {e}")
         return []
@@ -255,7 +422,7 @@ def semantic_lookup(search_query: str, limit: int) -> list[IndexedDocument]:
         ),
     )
 
-    semantic_matches: list[IndexedDocument] = [build_indexed_document(document) for document, _ in results[:limit]]
+    semantic_matches: list[IndexedDocument] = [build_indexed_document(document) for document, _ in results[: plan.top_k]]
 
     logger.debug(
         "semantic_lookup_selected=%s",
@@ -265,56 +432,223 @@ def semantic_lookup(search_query: str, limit: int) -> list[IndexedDocument]:
     return semantic_matches
 
 
-def hybrid_retrieve(question: str, conversation_history: list[dict[str, str]]) -> tuple[RetrievalPlan, list[IndexedDocument]]:
-    plan = plan_search(question, conversation_history)
-    exact_matches = exact_offer_lookup(plan.offer_ids)
+def merge_tender_data(tender_id: str, attachment_chunks: list[str] = None) -> MergedTender:
+    import uuid
 
-    if not plan.needs_search and not exact_matches:
-        logger.debug("hybrid_retrieve returning early with no search and no exact matches")
-        return plan, []
+    from etl.postgres_saver import get_tender_by_id, get_tender_tags
 
-    semantic_matches = semantic_lookup(plan.search_query, plan.top_k)
+    tender_sql = None
+    try:
+        tender_sql = get_tender_by_id(uuid.UUID(tender_id))
+    except Exception as e:
+        logger.error(f"Error fetching tender {tender_id} from PostgreSQL: {e}")
 
-    combined: list[IndexedDocument] = []
-    seen_texts: set[str] = set()
+    tender_json = {}
+    try:
+        json_path = PARSED_DIR / f"{tender_id}.json"
+        if json_path.exists():
+            with open(json_path, encoding="utf-8") as f:
+                tender_json = json.load(f)
+    except Exception as e:
+        logger.error(f"Error reading raw JSON for tender {tender_id}: {e}")
 
-    for record in exact_matches:
-        if len(combined) >= plan.top_k:
-            break
-        if record.raw_text not in seen_texts:
-            seen_texts.add(record.raw_text)
-            combined.append(record)
+    sql_tags = []
+    if tender_sql:
+        try:
+            sql_tags = get_tender_tags(tender_sql.id)
+        except Exception:
+            pass
 
-    for record in semantic_matches:
-        if len(combined) >= plan.top_k:
-            break
-        if record.raw_text not in seen_texts:
-            seen_texts.add(record.raw_text)
-            combined.append(record)
+    enrichment = tender_json.get("enrichment") or {}
+    json_tags = enrichment.get("tags") or []
+    merged_tags = list(set(sql_tags + json_tags))
 
-    logger.debug(
-        "hybrid_retrieve_final=%s",
-        to_json_log(
-            {
-                "question": question,
-                "combined_sources": [record.source_url for record in combined],
-                "combined_documents": [document_log_payload(record) for record in combined],
-            }
-        ),
+    sql_nuts3 = tender_sql.nuts3 if (tender_sql and tender_sql.nuts3) else []
+    json_nuts3 = enrichment.get("nuts3") or []
+    merged_nuts3 = list(set(sql_nuts3 + json_nuts3))
+
+    sql_cpv = tender_sql.cpv_codes if (tender_sql and tender_sql.cpv_codes) else []
+    json_cpv = tender_json.get("cpvCodes", []) or []
+    merged_cpv = list(set(sql_cpv + json_cpv))
+
+    return MergedTender(
+        id=tender_id,
+        title=tender_sql.title if (tender_sql and tender_sql.title) else (tender_json.get("title") or "unknown"),
+        description=tender_sql.description if (tender_sql and tender_sql.description) else (tender_json.get("description") or ""),
+        reference_number=tender_sql.reference_number if (tender_sql and tender_sql.reference_number) else (tender_json.get("referenceNumber") or ""),
+        contract_nature=tender_sql.contract_nature if (tender_sql and tender_sql.contract_nature) else (tender_json.get("contractNature") or ""),
+        scraper_url=tender_sql.scraper_url if (tender_sql and tender_sql.scraper_url) else (tender_json.get("scraper_url") or ""),
+        created_at=str(tender_sql.created_at) if (tender_sql and tender_sql.created_at) else (tender_json.get("createdAt") or ""),
+        publication_date=str(tender_sql.publication_date) if (tender_sql and tender_sql.publication_date) else (tender_json.get("publicationDate") or ""),
+        submitting_offers_deadline=str(tender_sql.submitting_offers_deadline)
+        if (tender_sql and tender_sql.submitting_offers_deadline)
+        else (tender_json.get("submittingOffersDeadline") or ""),
+        industry=tender_sql.industry if (tender_sql and tender_sql.industry) else (enrichment.get("industry") or ""),
+        nuts3=merged_nuts3,
+        cpv_codes=merged_cpv,
+        tags=merged_tags,
+        llm_extracted=tender_sql.llm_extracted if tender_sql else False,
+        llm_tytul=tender_sql.llm_tytul if (tender_sql and tender_sql.llm_tytul) else None,
+        llm_zamawiajacy=tender_sql.llm_zamawiajacy if (tender_sql and tender_sql.llm_zamawiajacy) else None,
+        llm_budzet=tender_sql.llm_budzet if (tender_sql and tender_sql.llm_budzet) else None,
+        llm_deadline=tender_sql.llm_deadline if (tender_sql and tender_sql.llm_deadline) else None,
+        llm_miejsce_realizacji=tender_sql.llm_miejsce_realizacji if (tender_sql and tender_sql.llm_miejsce_realizacji) else None,
+        llm_wymagania_techniczne=tender_sql.llm_wymagania_techniczne if (tender_sql and tender_sql.llm_wymagania_techniczne) else [],
+        llm_kryteria_oceny=tender_sql.llm_kryteria_oceny if (tender_sql and tender_sql.llm_kryteria_oceny) else [],
+        llm_wymagane_dokumenty=tender_sql.llm_wymagane_dokumenty if (tender_sql and tender_sql.llm_wymagane_dokumenty) else [],
+        llm_ryzyka=tender_sql.llm_ryzyka if (tender_sql and tender_sql.llm_ryzyka) else [],
+        attachment_chunks=attachment_chunks or [],
     )
 
-    return plan, combined
+
+def format_merged_tender(record: MergedTender, detailed: bool = False) -> str:
+    if detailed:
+        lines = [
+            f"Title: {record.title}",
+            f"Source: {record.scraper_url}",
+            f"Offer ID: {record.id}",
+            f"Reference Number: {record.reference_number}",
+            f"Contract Nature: {record.contract_nature}",
+            f"Deadline: {record.submitting_offers_deadline}",
+            f"Industry: {record.industry}",
+        ]
+        if record.tags:
+            lines.append(f"Tags: {', '.join(record.tags)}")
+
+        if record.llm_extracted:
+            lines.append("Structured LLM Analysis:")
+            lines.append(f"  Gemini Title: {record.llm_tytul}")
+            lines.append(f"  Gemini Issuer: {record.llm_zamawiajacy}")
+            lines.append(f"  Gemini Budget: {record.llm_budzet}")
+            lines.append(f"  Gemini Deadline: {record.llm_deadline}")
+            lines.append(f"  Gemini Place: {record.llm_miejsce_realizacji}")
+            lines.append(f"  Gemini Technical Requirements: {', '.join(record.llm_wymagania_techniczne)}")
+            lines.append(f"  Gemini Criteria: {', '.join(record.llm_kryteria_oceny)}")
+            lines.append(f"  Gemini Required Documents: {', '.join(record.llm_wymagane_dokumenty)}")
+            lines.append(f"  Gemini Risks: {', '.join(record.llm_ryzyka)}")
+
+        if record.attachment_chunks:
+            lines.append("Relevant Document Excerpts:")
+            for chunk in record.attachment_chunks[:3]:
+                lines.append(f"  - {chunk.strip()}")
+
+        lines.append("Description:")
+        lines.append(record.description)
+        return "\n".join(lines)
+
+    desc_parts = []
+    if record.llm_extracted:
+        desc_parts.append(f"Tytuł: {record.llm_tytul}")
+        desc_parts.append(f"Zamawiający: {record.llm_zamawiajacy}")
+        desc_parts.append(f"Budżet: {record.llm_budzet}")
+        desc_parts.append(f"Termin składania: {record.llm_deadline}")
+        desc_parts.append(f"Miejsce realizacji: {record.llm_miejsce_realizacji}")
+        if record.llm_wymagania_techniczne:
+            desc_parts.append(f"Kluczowe wymagania: {'; '.join(record.llm_wymagania_techniczne)}")
+
+    if record.attachment_chunks:
+        desc_parts.append("Kluczowe fragmenty z dokumentów:")
+        for chunk in record.attachment_chunks[:3]:
+            desc_parts.append(f"  - {chunk.strip()}")
+
+    if not desc_parts:
+        desc_parts.append(record.description or "")
+
+    combined_desc = "\n".join(desc_parts)[:1500]
+
+    summary = OfferSummary(
+        offer_id=record.id, title=record.title or "unknown", source_url=record.scraper_url or "", tags=record.tags, short_description=combined_desc
+    )
+    return summary.model_dump_json(indent=2)
 
 
-def ask(question: str, conversation_history: list[dict[str, str]]) -> str:
-    logger.info(f"received question={question}")
+async def hybrid_retrieve(question: str, conversation_history: list[dict[str, str]]) -> tuple[RetrievalPlan, list[MergedTender], bool]:
+    from etl.postgres_saver import search_tenders_sql
+
+    plan = plan_search(question, conversation_history)
+    detailed = len(plan.offer_ids) > 0
+
+    if plan.offer_ids:
+        logger.info(f"Direct UUID lookup triggered for IDs: {plan.offer_ids}")
+        merged_tenders = []
+        for oid in plan.offer_ids:
+            try:
+                attachment_chunks = []
+                try:
+                    results = vector_store.get(where={"offer_id": oid})
+                    attachment_chunks = results.get("documents", []) or []
+                except Exception as chroma_err:
+                    logger.error(f"Chroma error during exact lookup for {oid}: {chroma_err}")
+
+                merged = merge_tender_data(oid, attachment_chunks)
+                merged_tenders.append(merged)
+            except Exception as e:
+                logger.error(f"Error during direct UUID lookup for {oid}: {e}")
+        return plan, merged_tenders, detailed
+
+    if not plan.needs_search:
+        return plan, [], detailed
+
+    async def perform_vector_search():
+        try:
+            return await asyncio.to_thread(semantic_lookup, plan)
+        except Exception as e:
+            logger.exception(f"Vector search failed: {e}")
+            return []
+
+    async def perform_sql_search():
+        try:
+            return await asyncio.to_thread(search_tenders_sql, plan.search_query, plan.top_k)
+        except Exception as e:
+            logger.exception(f"SQL search failed: {e}")
+            return []
+
+    vector_task = perform_vector_search()
+    sql_task = perform_sql_search()
+
+    semantic_matches, sql_matches = await asyncio.gather(vector_task, sql_task)
+
+    combined_tenders: list[MergedTender] = []
+    seen_ids: set[str] = set()
+
+    for sql_tender in sql_matches:
+        str_id = str(sql_tender.id)
+        if str_id not in seen_ids:
+            seen_ids.add(str_id)
+            chunks = []
+            for record in semantic_matches:
+                if record.offer_id == str_id:
+                    chunks.append(record.raw_text)
+
+            merged = merge_tender_data(str_id, chunks)
+            combined_tenders.append(merged)
+
+    for record in semantic_matches:
+        if len(combined_tenders) >= plan.top_k:
+            break
+        if record.offer_id and record.offer_id != "unknown":
+            str_id = str(record.offer_id)
+            if str_id not in seen_ids:
+                seen_ids.add(str_id)
+                chunks = [rec.raw_text for rec in semantic_matches if rec.offer_id == str_id]
+                merged = merge_tender_data(str_id, chunks)
+                combined_tenders.append(merged)
+
+    return plan, combined_tenders, detailed
+
+
+async def ask(question: str, conversation_history: list[dict[str, str]]) -> str:
+    logger.debug(f"received question={question}")
     logger.debug(f"current conversation_history={to_json_log(conversation_history)}")
-    plan, retrieved_documents = hybrid_retrieve(question, conversation_history)
+    plan, retrieved_documents, detailed = await hybrid_retrieve(question, conversation_history)
+
+    if plan.warning:
+        return "Przepraszam, ale to wykracza poza moje instrukcje. Mogę za to opowiedzieć Ci o najnowszych ofertach publicznych!"
 
     if not retrieved_documents:
         context = "No relevant evidence was retrieved from the document store."
     else:
-        context = "\n\n---\n\n".join(format_indexed_document(record) for record in retrieved_documents)
+        context = "\n\n---\n\n".join(format_merged_tender(record, detailed=detailed) for record in retrieved_documents)
 
     logger.debug(
         "final_prompt_context=%s",
@@ -325,9 +659,10 @@ def ask(question: str, conversation_history: list[dict[str, str]]) -> str:
                     "needs_search": plan.needs_search,
                     "search_query": plan.search_query,
                     "offer_ids": list(plan.offer_ids),
+                    "excluded_offer_ids": list(plan.excluded_offer_ids),
                     "top_k": plan.top_k,
                 },
-                "retrieved_documents": [document_log_payload(record) for record in retrieved_documents],
+                "retrieved_documents": [{"id": record.id, "title": record.title} for record in retrieved_documents],
                 "context": context,
             }
         ),
@@ -348,11 +683,19 @@ def ask(question: str, conversation_history: list[dict[str, str]]) -> str:
     message = ""
     for response in llm.stream(messages):
         message += response.content
-    logger.info(f"generated answer length={len(message)}")
+    logger.debug(f"generated answer length={len(message)}")
+    logger.debug(f"generated answer={message}")
     return message
 
 
 def main():
+    """
+    Run the console RAG chat interface.
+
+    Starts an interactive loop that accepts user questions, retrieves relevant documents,
+    and generates answers using the LLM. Maintains conversation history across multiple turns.
+    Accepts 'exit' or 'quit' commands to terminate the session.
+    """
     print("Console RAG chat ready. Type your question, or 'exit' to quit.")
     conversation_history: list[dict[str, str]] = []
     while True:
@@ -369,7 +712,7 @@ def main():
             break
 
         try:
-            answer = ask(contents, conversation_history)
+            answer = asyncio.run(ask(contents, conversation_history))
             print(f"Assistant: {answer}")
             conversation_history.append({"user": contents, "assistant": answer})
         except Exception as e:
@@ -385,7 +728,9 @@ if __name__ == "__main__":
     llm = ChatOpenAI(model=MODEL)
     embeddings = OpenAIEmbeddings(model=MODEL_EMBEDDINGS)
 
-    vector_store = Chroma(collection_name="bid_info_json", embedding_function=embeddings, persist_directory=str(CHROMA_DB_PATH))
+    vector_store = Chroma(
+        collection_name=os.getenv("CHROMA_COLLECTION_NAME", "bid_info_json"), embedding_function=embeddings, persist_directory=str(CHROMA_DB_PATH)
+    )
 
     strategy_name = os.getenv("LOAD_DATA_STRATEGY", "OldDataOnly")
     try:
@@ -397,8 +742,6 @@ if __name__ == "__main__":
     print("finished loading documents, count=", len(documents))
 
     indexed_documents: list[IndexedDocument] = [build_indexed_document(document) for document in documents]
-
-    from collections import defaultdict
 
     indexed_documents_by_id: dict[str, list[IndexedDocument]] = defaultdict(list)
     for record in indexed_documents:

@@ -3,7 +3,7 @@
 __pycache__
 
 data*/
-data_old
 .env
 logs
 chroma_langchain_db*
+*.png
