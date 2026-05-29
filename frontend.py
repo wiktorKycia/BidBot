@@ -101,34 +101,42 @@ with tab_analysis:
             # Pie / Donut Chart
             pie_data = [{"Branża": ind, "Liczba": sum(tags.values())} for ind, tags in grouped.items()]
             pie_df = pd.DataFrame(pie_data)
-            
+
             pie_chart = (
                 alt.Chart(pie_df)
-                .mark_arc(innerRadius=40)
+                .mark_arc(innerRadius=0)
                 .encode(
                     theta=alt.Theta("Liczba:Q"),
                     color=alt.Color("Branża:N", sort=alt.EncodingSortField(field="Liczba", order="descending")),
                     tooltip=["Branża", "Liczba"]
                 )
                 .properties(title="Udział tagów według branż")
+                .configure_title(fontSize=20)
+                .configure_legend(titleFontSize=16, labelFontSize=14)
             )
             
-            st.altair_chart(pie_chart, use_container_width=True)
+            st.altair_chart(pie_chart, width='stretch')
             st.divider()
 
             # Bar Charts
             for industry, tags in grouped.items():
-                tags_data = [{"Tag": tag, "Liczba": count} for tag, count in tags.items()]
+                top_tags = list(tags.items())[:5]
+                tags_data = [{"Tag": tag, "Liczba": count} for tag, count in top_tags]
                 tags_df = pd.DataFrame(tags_data)
                 
                 base_chart = alt.Chart(tags_df).encode(
-                    x=alt.X("Liczba:Q", title="Liczba wystąpień"),
-                    y=alt.Y("Tag:N", title="", sort=alt.EncodingSortField(field="Liczba", order="descending")),
+                    x=alt.X("Liczba:Q", title="Liczba wystąpień", axis=alt.Axis(titleFontSize=16, labelFontSize=14, labelLineHeight=2)),
+                    y=alt.Y("Tag:N", title="", sort=alt.EncodingSortField(field="Liczba", order="descending"), axis=alt.Axis(labelFontSize=14)),
                     tooltip=["Tag", "Liczba"]
                 )
                 
                 bar = base_chart.mark_bar()
-                text = base_chart.mark_text(align="left", baseline="middle", dx=3).encode(text="Liczba:Q")
+                text = base_chart.mark_text(align="left", baseline="middle", dx=3, fontSize=16, color="white").encode(text="Liczba:Q")
                 
-                chart = (bar + text).properties(title=f"{industry} — {sum(tags.values())} tagów")
-                st.altair_chart(chart, use_container_width=True)
+                chart = (
+                    (bar + text)
+                    .properties(title=f"{industry} — {sum(tags.values())} tagów")
+                    .interactive()
+                    .configure_title(fontSize=20)
+                )
+                st.altair_chart(chart, width='stretch')
