@@ -151,3 +151,48 @@ with tab_analysis:
                     .configure_title(fontSize=20)
                 )
                 st.altair_chart(chart, width='stretch')
+    st.divider()
+    st.header("Analiza branż po ofertach")
+
+    json_path = Path(__file__).resolve().parent / "data_analysis" / "analysis_output" / "counted_industries.json"
+    if not json_path.exists():
+        st.warning(f"Brak danych do analizy. Nie znaleziono pliku:\n`{json_path}`")
+    else:
+        with open(json_path, "r", encoding="utf-8") as f:
+            industries = json.load(f)["industries"]
+
+        if not industries:
+            st.warning("Brak danych o branżach ofert.")
+        else:
+            sorted_industries = dict(sorted(industries.items(), key=lambda item: (-item[1], item[0].lower())))
+
+            # Pie / Donut Chart
+            pie_data = [{"Branża": ind, "Liczba": number} for ind, number in sorted_industries.items()]
+            pie_df = pd.DataFrame(pie_data)
+
+            base_pie = alt.Chart(pie_df).encode(
+                theta=alt.Theta("Liczba:Q", stack=True),
+                color=alt.Color("Branża:N", sort=alt.EncodingSortField(field="Liczba", order="descending")),
+                tooltip=["Branża", "Liczba"]
+            )
+
+            pie_chart = base_pie.mark_arc(outerRadius=200)
+
+            pie_text = base_pie.mark_text(radius=300).encode(
+                text="Branża:N"
+            )
+
+            # pie_numbers = base_pie.mark_text(radius=80, ).encode(
+            #     text="Liczba:Q",
+            #     color=alt.value("black")
+            # )
+
+            final_pie_chart = (
+                (pie_chart + pie_text)
+                .properties(title="Branże wśród ofert")
+                .configure_title(fontSize=20)
+                .configure_legend(titleFontSize=16, labelFontSize=14)
+            )
+
+            st.altair_chart(final_pie_chart, width='stretch')
+
