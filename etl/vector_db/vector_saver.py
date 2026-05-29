@@ -53,8 +53,8 @@ def convert_file(filepath: Path) -> list[Document]:
 
     try:
         docs = loader.load()
-    except Exception as e:
-        logger.error(f"Error loading {filepath}: {e}")
+    except Exception:
+        logger.exception(f"Error loading document: {filepath}")
         return []
 
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=DOCUMENT_CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)

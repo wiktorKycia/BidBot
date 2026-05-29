@@ -13,20 +13,21 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 from etl.llms import MODEL, require_openai_api_key
 from etl.loggers import setup_logging
-from etl.settings import CHROMA_DB_PATH, TAGS_PATH
+from etl.settings import CHROMA_DB_PATH, TAGS_PATH, EMBEDDING_MODEL
 from etl.vector_db.models import IndexedDocument, LoadDataStrategy, OfferSummary, RetrievalPlan
 from etl.vector_db.prompts import main_system_message_template, use_search_system_message_template
 from etl.vector_db.vector_saver import load_data
 
 OPENAI_API_KEY = require_openai_api_key()
 
-MODEL_EMBEDDINGS = "text-embedding-3-small"
+MODEL_EMBEDDINGS = EMBEDDING_MODEL
 
 try:
     with open(TAGS_PATH) as f:
         _tags_data: dict = json.loads(f.read())
         TAGS_STR = ", ".join(_tags_data.get("tags", [])) if isinstance(_tags_data, dict) else ""
 except Exception:
+    logger.warning(f"Failed to load tags from {TAGS_PATH}, falling back to empty string")
     TAGS_STR = ""
 
 MAX_CONTEXT_DOCS = 10
