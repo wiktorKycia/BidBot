@@ -5,6 +5,7 @@ from collections import defaultdict
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from langchain_chroma import Chroma
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
@@ -13,9 +14,13 @@ from pydantic import BaseModel
 import etl.vector_db.main as ragemain
 from etl.llms import MODEL
 from etl.loggers import setup_logging
+from etl.settings import CHROMA_DB_PATH, EMBEDDING_MODEL
 from etl.vector_db.main import ask, build_indexed_document
 from etl.vector_db.models import LoadDataStrategy
 from etl.vector_db.vector_saver import load_data
+
+DOTENV_PATH = Path(__file__).resolve().parent / ".env"
+load_dotenv(DOTENV_PATH)
 
 
 class ChatRequest(BaseModel):
@@ -29,11 +34,10 @@ class ChatResponse(BaseModel):
 
 app_ready = False
 
-BASE_DIR = Path(__file__).resolve().parent
-CHROMA_DB_PATH = BASE_DIR / "etl" / "vector_db" / "chroma_langchain_db"
-
-embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
-vector_store = Chroma(collection_name="bid_info_json", embedding_function=embeddings, persist_directory=str(CHROMA_DB_PATH))
+embeddings = OpenAIEmbeddings(model=EMBEDDING_MODEL)
+vector_store = Chroma(
+    collection_name=os.getenv("CHROMA_COLLECTION_NAME", "bid_info_json"), embedding_function=embeddings, persist_directory=str(CHROMA_DB_PATH)
+)
 
 
 try:
@@ -88,7 +92,7 @@ def chat_with_bot(request: ChatRequest):
         return ChatResponse(answer=bot_answer)
     except Exception as e:
         ragemain.logger.exception(f"Krytyczny błąd podczas wywołania czatu: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
 @app.get("/health")
