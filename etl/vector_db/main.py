@@ -11,16 +11,14 @@ from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate, SystemMessagePromptTemplate
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
-from etl.llms import MODEL, require_openai_api_key
+from etl.llms import MODEL, EMBEDDING_MODEL, require_openai_api_key
 from etl.loggers import setup_logging
-from etl.settings import CHROMA_DB_PATH, get_all_tags
+from etl.settings import CHROMA_DB_PATH, TAGS_PATH, get_all_tags
 from etl.vector_db.models import IndexedDocument, LoadDataStrategy, OfferSummary, RetrievalPlan
 from etl.vector_db.prompts import main_system_message_template, use_search_system_message_template
 from etl.vector_db.vector_saver import load_data
 
 OPENAI_API_KEY = require_openai_api_key()
-
-MODEL_EMBEDDINGS = "text-embedding-3-small"
 
 MAX_CONTEXT_DOCS = 10
 MAX_CHROMA_BATCH = 5461
@@ -32,7 +30,7 @@ logger = logging.getLogger("vector_db")
 try:
     TAGS_STR = get_all_tags()
 except Exception as e:
-    logger.error(f"Could not get all tags, due to error: {e}")
+    logger.warning(f"Failed to load tags from {TAGS_PATH}, falling back to empty string")
     TAGS_STR = ""
 
 
@@ -586,7 +584,7 @@ def main():
 
 if __name__ == "__main__":
     llm = ChatOpenAI(model=MODEL)
-    embeddings = OpenAIEmbeddings(model=MODEL_EMBEDDINGS)
+    embeddings = OpenAIEmbeddings(model=EMBEDDING_MODEL)
 
     vector_store = Chroma(
         collection_name=os.getenv("CHROMA_COLLECTION_NAME", "bid_info_json"), embedding_function=embeddings, persist_directory=str(CHROMA_DB_PATH)

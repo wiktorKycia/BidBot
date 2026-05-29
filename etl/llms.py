@@ -4,6 +4,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 MODEL = "gpt-5.4-nano"
+EMBEDDING_MODEL = "text-embedding-3-small"
 
 DOTENV_PATH = Path(__file__).resolve().parent.parent / ".env"
 load_dotenv(DOTENV_PATH)

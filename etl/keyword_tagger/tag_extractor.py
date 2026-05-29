@@ -1,9 +1,8 @@
 import asyncio
 import logging
-import os
 from pathlib import Path
 from collections import Counter
-
+from etl.settings import TAGS_PATH
 from etl.loggers import setup_logging
 from etl.scrapers.settings import PARSED_DIR
 from etl.utils import read_json, save_json
@@ -30,7 +29,7 @@ async def extract_tags_from_file(filename: str):
 
 
 async def main():
-    filenames = os.listdir(PARSED_DIR)
+    filenames = [f.name for f in PARSED_DIR.iterdir() if f.is_file() and f.suffix == ".json"]
 
     tasks = [extract_tags_from_file(filename) for filename in filenames]
 
@@ -42,7 +41,7 @@ async def main():
         else:
             tag_counts.update(tag.strip() for tag in res if tag and tag.strip())
 
-    await save_json(Path(__file__).resolve().parent / "tags_counted.json", {"tags": dict(tag_counts)})
+    await save_json(TAGS_PATH, {"tags": dict(tag_counts)})
 
 
 if __name__ == "__main__":
