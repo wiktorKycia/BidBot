@@ -1,6 +1,5 @@
 import asyncio
 import logging
-from pathlib import Path
 
 from etl.loggers import setup_logging
 from etl.scrapers.settings import PARSED_DIR

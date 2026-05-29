@@ -13,13 +13,14 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 from etl.llms import MODEL, require_openai_api_key
 from etl.loggers import setup_logging
-from etl.settings import CHROMA_DB_PATH, TAGS_PATH, EMBEDDING_MODEL
+from etl.settings import CHROMA_DB_PATH, EMBEDDING_MODEL, TAGS_PATH
 from etl.vector_db.models import IndexedDocument, LoadDataStrategy, OfferSummary, RetrievalPlan
 from etl.vector_db.prompts import main_system_message_template, use_search_system_message_template
 from etl.vector_db.vector_saver import load_data
 
 OPENAI_API_KEY = require_openai_api_key()
 
+logger = logging.getLogger("vector_db")
 MODEL_EMBEDDINGS = EMBEDDING_MODEL
 
 try:
