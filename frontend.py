@@ -114,13 +114,13 @@ with tab_analysis:
                 text="Branża:N"
             )
 
-            pie_numbers = base_pie.mark_text(radius=80).encode(
-                text="Liczba:Q",
-                color=alt.value("black")
-            )
+            # pie_numbers = base_pie.mark_text(radius=80, ).encode(
+            #     text="Liczba:Q",
+            #     color=alt.value("black")
+            # )
 
             final_pie_chart = (
-                (pie_chart + pie_text + pie_numbers)
+                (pie_chart + pie_text)
                 .properties(title="Udział tagów według branż")
                 .configure_title(fontSize=20)
                 .configure_legend(titleFontSize=16, labelFontSize=14)
