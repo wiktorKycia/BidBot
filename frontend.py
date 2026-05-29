@@ -102,20 +102,31 @@ with tab_analysis:
             pie_data = [{"Branża": ind, "Liczba": sum(tags.values())} for ind, tags in grouped.items()]
             pie_df = pd.DataFrame(pie_data)
 
-            pie_chart = (
-                alt.Chart(pie_df)
-                .mark_arc(innerRadius=0)
-                .encode(
-                    theta=alt.Theta("Liczba:Q"),
-                    color=alt.Color("Branża:N", sort=alt.EncodingSortField(field="Liczba", order="descending")),
-                    tooltip=["Branża", "Liczba"]
-                )
+            base_pie = alt.Chart(pie_df).encode(
+                theta=alt.Theta("Liczba:Q", stack=True),
+                color=alt.Color("Branża:N", sort=alt.EncodingSortField(field="Liczba", order="descending")),
+                tooltip=["Branża", "Liczba"]
+            )
+
+            pie_chart = base_pie.mark_arc(outerRadius=100)
+
+            pie_text = base_pie.mark_text(radius=120).encode(
+                text="Branża:N"
+            )
+
+            pie_numbers = base_pie.mark_text(radius=80).encode(
+                text="Liczba:Q",
+                color=alt.value("black")
+            )
+
+            final_pie_chart = (
+                (pie_chart + pie_text + pie_numbers)
                 .properties(title="Udział tagów według branż")
                 .configure_title(fontSize=20)
                 .configure_legend(titleFontSize=16, labelFontSize=14)
             )
             
-            st.altair_chart(pie_chart, width='stretch')
+            st.altair_chart(final_pie_chart, width='stretch')
             st.divider()
 
             # Bar Charts
@@ -126,7 +137,7 @@ with tab_analysis:
                 
                 base_chart = alt.Chart(tags_df).encode(
                     x=alt.X("Liczba:Q", title="Liczba wystąpień", axis=alt.Axis(titleFontSize=16, labelFontSize=14, labelLineHeight=2)),
-                    y=alt.Y("Tag:N", title="", sort=alt.EncodingSortField(field="Liczba", order="descending"), axis=alt.Axis(labelFontSize=14)),
+                    y=alt.Y("Tag:N", title="", sort=alt.EncodingSortField(field="Liczba", order="descending"), axis=alt.Axis(labelFontSize=14, labelLimit=500)),
                     tooltip=["Tag", "Liczba"]
                 )
                 
@@ -135,7 +146,7 @@ with tab_analysis:
                 
                 chart = (
                     (bar + text)
-                    .properties(title=f"{industry} — {sum(tags.values())} tagów")
+                    .properties(title=f"{industry} — {sum(tags.values())} tagów", height=alt.Step(40))
                     .interactive()
                     .configure_title(fontSize=20)
                 )
